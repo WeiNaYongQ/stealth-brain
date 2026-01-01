@@ -66,12 +66,6 @@
     .btn.operator:active {
       background: #d99234;
     }
-    .btn.equals {
-      background: #f1a33c;
-    }
-    .btn.equals:ante {
-      background: #d99234;
-    }
     .btn.zero {
       grid-column: span 2;
       border-radius: 36px;
@@ -104,94 +98,127 @@
       
       <button class="btn zero" data-value="0">0</button>
       <button class="btn" data-value=".">.</button>
-      <button class="btn equals" data-value="=">=</button>
+      <button class="btn" data-value="=">=</button>
     </div>
   </div>
 
   <script>
-    let displayValue = '0';
-    let resetOnNextInput = false;
+    let currentInput = '0';
+    let operatorPressed = false;
 
     const display = document.getElementById('display');
+    
     const updateDisplay = () => {
-      // Prevent overflow
-      display.textContent = displayValue.length > 12 
-        ? displayValue.slice(0, 12) + '…' 
-        : displayValue;
+      // Truncate long numbers
+      let text = currentInput;
+      if (text.length > 12) {
+        text = parseFloat(text).toExponential(5);
+      }
+      display.textContent = text;
     };
 
-    const handleInput = (value) => {
+    const clearAll = () => {
+      currentInput = '0';
+      operatorPressed = false;
+    };
+
+    const handleButton = (value) => {
+      // Clear
       if (value === 'C') {
-        displayValue = '0';
-        resetOnNextInput = false;
+        clearAll();
         return;
       }
 
+      // Plus/Minus
       if (value === '±') {
-        if (displayValue !== '0') {
-          displayValue = displayValue.startsWith('-') 
-            ? displayValue.slice(1) 
-            : '-' + displayValue;
+        if (currentInput !== '0') {
+          if (currentInput.startsWith('-')) {
+            currentInput = currentInput.slice(1);
+          } else {
+            currentInput = '-' + currentInput;
+          }
         }
         return;
       }
 
+      // Percentage
       if (value === '%') {
-        const num = parseFloat(displayValue);
+        const num = parseFloat(currentInput);
         if (!isNaN(num)) {
-          displayValue = (num / 100).toString();
+          currentInput = (num / 100).toString();
         }
         return;
       }
 
-      if (['+', '-', '*', '/', '='].includes(value)) {
+      // Equals
+      if (value === '=') {
         try {
-          // Prepare expression for eval (replace symbols)
-          let expr = displayValue
+          // Clean the expression for eval
+          let expr = currentInput
             .replace(/×/g, '*')
             .replace(/÷/g, '/')
-            .replace(/−/g, '-')
-            .replace(/--/g, '+');
+            .replace(/−/g, '-') // note: this is MINUS SIGN (U+2212), not HYPHEN
+            .replace(/[^-()\d/*+.]/g, ''); // remove any unsafe chars
+
+          // Prevent empty or invalid
+          if (!expr || expr === '-') return;
+
+          // Use Function instead of eval for slight safety (still not perfect, but ok for calculator)
+          const result = Function('"use strict"; return (' + expr + ')')();
           
-          if (value === '=') {
-            // Evaluate and show result
-            const result = Function('"use strict"; return (' + expr + ')')();
-            displayValue = isFinite(result) ? result.toString() : 'Error';
+          if (isNaN(result) || !isFinite(result)) {
+            currentInput = 'Error';
           } else {
-            // Append operator
-            displayValue = expr + value.replace('×', '*').replace('÷', '/').replace('−', '-');
+            // Format result
+            currentInput = parseFloat(result.toFixed(10)).toString();
           }
-          resetOnNextInput = true;
         } catch (e) {
-          displayValue = 'Error';
-          resetOnNextInput = true;
+          currentInput = 'Error';
         }
+        operatorPressed = true; // Next digit will reset
         return;
       }
 
-      // Digit or decimal point
-      if (resetOnNextInput) {
-        displayValue = value === '.' ? '0.' : value;
-        resetOnNextInput = false;
+      // Operators (+, -, ×, ÷)
+      if (['+', '-', '*', '/'].includes(value)) {
+        const symbol = value === '*' ? '×' : value === '/' ? '÷' : value === '-' ? '−' : '+';
+        if (operatorPressed) {
+          // Replace last operator
+          const lastChar = currentInput.slice(-1);
+          if (['+', '−', '×', '÷'].includes(lastChar)) {
+            currentInput = currentInput.slice(0, -1) + symbol;
+          } else {
+            currentInput += symbol;
+          }
+        } else {
+          currentInput += symbol;
+        }
+        operatorPressed = true;
+        return;
+      }
+
+      // Digits and decimal
+      if (operatorPressed || currentInput === '0') {
+        currentInput = value === '.' ? '0.' : value;
+        operatorPressed = false;
       } else {
         if (value === '.') {
-          if (displayValue.includes('.')) return; // Only one decimal
-          displayValue += '.';
+          if (currentInput.includes('.')) return;
+          currentInput += '.';
         } else {
-          displayValue = displayValue === '0' ? value : displayValue + value;
+          currentInput += value;
         }
       }
     };
 
-    // Attach event listeners
+    // Attach events
     document.querySelectorAll('.btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        handleInput(btn.dataset.value);
+        handleButton(btn.dataset.value);
         updateDisplay();
       });
     });
 
-    // Initial display
     updateDisplay();
   </script>
 </body>
