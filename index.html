@@ -71,15 +71,20 @@
       border-radius: 36px;
     }
 
-    /* DEBUG ONLY — will be removed later */
+    /* 🔴 VERY VISIBLE DEBUG — FOR TESTING ONLY */
     #debug {
       position: absolute;
-      top: 5px;
-      left: 5px;
-      font-size: 12px;
-      color: rgba(0, 255, 0, 0.3); /* very faint green */
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: red;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 18px;
+      font-weight: bold;
+      z-index: 9999;
       pointer-events: none;
-      z-index: 100;
     }
   </style>
 </head>
@@ -115,24 +120,24 @@
 
   <div id="chessLayer"></div>
   
-  <!-- DEBUG LABEL -->
-  <div id="debug">a1</div>
+  <!-- 🔴 BIG RED DEBUG BOX -->
+  <div id="debug" style="display: none;">a1</div>
 
   <script>
-    let mode = 'calculator'; // 'calculator' or 'chess'
-    let file = 0; // 0=a, 1=b, ..., 7=h
-    let rank = 1; // 1 to 8
+    let mode = 'calculator';
+    let file = 0; // a=0, b=1, ..., h=7
+    let rank = 1; // 1–8
     let tapHistory = [];
     let lastTapTime = 0;
 
     const display = document.getElementById('display');
     const calculatorEl = document.getElementById('calculator');
     const chessLayer = document.getElementById('chessLayer');
-    const debugEl = document.getElementById('debug'); // FOR TESTING ONLY
+    const debugEl = document.getElementById('debug');
 
     const updateDebug = () => {
-      const fileChar = String.fromCharCode(97 + file); // a-h
-      debugEl.textContent = fileChar + rank;
+      const square = String.fromCharCode(97 + file) + rank;
+      debugEl.textContent = square;
     };
 
     const switchToChess = () => {
@@ -142,7 +147,8 @@
       calculatorEl.style.display = 'none';
       chessLayer.style.opacity = '1';
       chessLayer.style.pointerEvents = 'auto';
-      updateDebug(); // reset debug
+      debugEl.style.display = 'block'; // SHOW DEBUG
+      updateDebug();
     };
 
     const switchToCalculator = () => {
@@ -150,81 +156,54 @@
       calculatorEl.style.display = 'flex';
       chessLayer.style.opacity = '0';
       chessLayer.style.pointerEvents = 'none';
+      debugEl.style.display = 'none'; // HIDE DEBUG
       tapHistory = [];
     };
 
-    // Calculator logic
+    // === CALCULATOR LOGIC (same as before) ===
     let currentInput = '0';
     let operatorPressed = false;
 
     const updateDisplay = () => {
       let text = currentInput;
-      if (text.length > 12) {
-        text = parseFloat(text).toExponential(5);
-      }
+      if (text.length > 12) text = parseFloat(text).toExponential(5);
       display.textContent = text;
     };
 
-    const clearAll = () => {
-      currentInput = '0';
-      operatorPressed = false;
-    };
-
     const handleButton = (value) => {
-      if (value === 'C') {
-        clearAll();
-        updateDisplay();
-        return;
-      }
-
+      if (value === 'C') { clearAll(); return; }
       if (value === '±') {
-        if (currentInput !== '0') {
-          currentInput = currentInput.startsWith('-') ? currentInput.slice(1) : '-' + currentInput;
-        }
-        updateDisplay();
-        return;
+        currentInput = currentInput !== '0' ? (currentInput.startsWith('-') ? currentInput.slice(1) : '-' + currentInput) : '0';
+        updateDisplay(); return;
       }
-
       if (value === '%') {
         const num = parseFloat(currentInput);
         if (!isNaN(num)) currentInput = (num / 100).toString();
-        updateDisplay();
-        return;
+        updateDisplay(); return;
       }
-
       if (value === '=') {
         if (currentInput === '999') {
           switchToChess();
           return;
         }
-
         try {
           const result = Function('"use strict"; return (' + currentInput + ')')();
-          if (isNaN(result) || !isFinite(result)) {
-            currentInput = 'Error';
-          } else {
-            currentInput = parseFloat(result.toFixed(10)).toString();
-          }
+          currentInput = isNaN(result) || !isFinite(result) ? 'Error' : parseFloat(result.toFixed(10)).toString();
         } catch (e) {
           currentInput = 'Error';
         }
         operatorPressed = true;
-        updateDisplay();
-        return;
+        updateDisplay(); return;
       }
-
       if (['+', '-', '*', '/'].includes(value)) {
-        const symbol = value;
         if (operatorPressed && ['+', '-', '*', '/'].includes(currentInput.slice(-1))) {
-          currentInput = currentInput.slice(0, -1) + symbol;
+          currentInput = currentInput.slice(0, -1) + value;
         } else {
-          currentInput += symbol;
+          currentInput += value;
         }
         operatorPressed = true;
-        updateDisplay();
-        return;
+        updateDisplay(); return;
       }
-
       if (operatorPressed || currentInput === '0') {
         currentInput = value === '.' ? '0.' : value;
         operatorPressed = false;
@@ -238,46 +217,37 @@
       updateDisplay();
     };
 
-    // Attach calculator buttons
+    const clearAll = () => { currentInput = '0'; operatorPressed = false; updateDisplay(); };
+
     document.querySelectorAll('.btn').forEach(btn => {
       btn.addEventListener('click', () => handleButton(btn.dataset.value));
     });
 
-    // Chess layer touch handling
-    chessLayer.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-    });
-
+    // === CHESS TOUCH HANDLING ===
     chessLayer.addEventListener('click', (e) => {
       if (mode !== 'chess') return;
 
-      const y = e.clientY || (e.touches && e.touches[0].clientY);
-      const half = window.innerHeight / 2;
-      const isUpper = y < half;
+      const y = e.clientY;
+      const isUpper = y < window.innerHeight / 2;
 
-      // Record tap for panic pattern
+      // Panic pattern
       const now = Date.now();
-      if (now - lastTapTime > 1500) tapHistory = []; // reset if idle
+      if (now - lastTapTime > 1500) tapHistory = [];
       tapHistory.push(isUpper ? 'U' : 'L');
       lastTapTime = now;
-
-      // Keep only last 4
       if (tapHistory.length > 4) tapHistory.shift();
-
-      // Check panic pattern: ULUL or LULU
-      const last4 = tapHistory.slice(-4).join('');
-      if (last4 === 'ULUL' || last4 === 'LULU') {
+      if (tapHistory.join('') === 'ULUL' || tapHistory.join('') === 'LULU') {
         switchToCalculator();
         return;
       }
 
-      // Coordinate cycling
+      // Cycle coords
       if (isUpper) {
         rank = rank % 8 + 1;
       } else {
         file = (file + 1) % 8;
       }
-      updateDebug(); // update debug label
+      updateDebug();
     });
 
     updateDisplay();
