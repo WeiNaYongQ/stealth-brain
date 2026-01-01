@@ -4,7 +4,465 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Calculator</title>
+  <style><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Calculator</title>
   <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      user-select: none;
+    }
+    body, html {
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #000;
+      color: white;
+      overflow: hidden;
+    }
+    #calculator {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      padding: 20px 0 0;
+    }
+    #display {
+      padding: 0 20px 20px;
+      text-align: right;
+      font-size: 80px;
+      min-height: 120px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: flex-end;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #buttons {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-rows: repeat(5, 1fr);
+      gap: 16px;
+      padding: 0 16px 24px;
+      flex: 1;
+    }
+    .btn {
+      background: #333;
+      border-radius: 50%;
+      font-size: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    .btn:active {
+      background: #444;
+    }
+    .btn.operator {
+      background: #f1a33c;
+    }
+    .btn.operator:active {
+      background: #d99234;
+    }
+    .btn.zero {
+      grid-column: span 2;
+      border-radius: 36px;
+    }
+
+    #chessLayer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      opacity: 0;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="calculator">
+    <div id="display">0</div>
+    <div id="buttons">
+      <button class="btn clear" data-value="C">C</button>
+      <button class="btn" data-value="±">±</button>
+      <button class="btn" data-value="%">%</button>
+      <button class="btn operator" data-value="/">÷</button>
+      
+      <button class="btn" data-value="7">7</button>
+      <button class="btn" data-value="8">8</button>
+      <button class="btn" data-value="9">9</button>
+      <button class="btn operator" data-value="*">×</button>
+      
+      <button class="btn" data-value="4">4</button>
+      <button class="btn" data-value="5">5</button>
+      <button class="btn" data-value="6">6</button>
+      <button class="btn operator" data-value="-">−</button>
+      
+      <button class="btn" data-value="1">1</button>
+      <button class="btn" data-value="2">2</button>
+      <button class="btn" data-value="3">3</button>
+      <button class="btn operator" data-value="+">+</button>
+      
+      <button class="btn zero" data-value="0">0</button>
+      <button class="btn" data-value=".">.</button>
+      <button class="btn" data-value="=">=</button>
+    </div>
+  </div>
+
+  <div id="chessLayer"></div>
+
+  <!-- chess.js from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.min.js"></script>
+
+<script>
+  // ===== GLOBAL STATE =====
+  let mode = 'calculator';
+  let file = 0, rank = 1;
+  let tapHistory = [];
+  let speechTimeout = null;
+  let isSpeechInitialized = false;
+  let longPressTimer = null;
+  let isLongPressing = false;
+  const LONG_PRESS_MS = 600;
+
+  // Chess
+  let game = new Chess();
+  let fromSquare = null;
+  let playerColor = 'white';
+  let stockfish = null;
+  let isStockfishLoaded = false;
+
+  // Calculator
+  let currentInput = '0';
+  let operatorPressed = false;
+
+  // DOM
+  const calcEl = document.getElementById('calculator');
+  const chessEl = document.getElementById('chessLayer');
+  const display = document.getElementById('display');
+
+  // ===== UTILITIES =====
+  const vibrate = (pattern) => {
+    if (navigator.vibrate) navigator.vibrate(pattern);
+  };
+
+  const speak = (text) => {
+    if (!isSpeechInitialized) {
+      speechSynthesis.cancel();
+      isSpeechInitialized = true;
+    }
+    speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.9;
+    utterance.volume = 0.8;
+    speechSynthesis.speak(utterance);
+  };
+
+  const debouncedSpeak = () => {
+    if (speechTimeout) clearTimeout(speechTimeout);
+    speechTimeout = setTimeout(() => {
+      const coord = String.fromCharCode(97 + file) + rank;
+      speak(coord);
+    }, 500);
+  };
+
+  const getCoord = () => String.fromCharCode(97 + file) + rank;
+
+  // ===== MODE & RESET =====
+  const resetCalculator = () => {
+    currentInput = '0';
+    operatorPressed = false;
+    updateDisplay();
+  };
+
+  const updateDisplay = () => {
+    display.textContent = currentInput.length > 12 ? parseFloat(currentInput).toExponential(5) : currentInput;
+  };
+
+  const switchToChess = (color) => {
+    playerColor = color;
+    mode = 'chess';
+    file = 0; rank = 1;
+    fromSquare = null;
+    game = new Chess();
+    calcEl.style.display = 'none';
+    chessEl.style.opacity = '1';
+    chessEl.style.pointerEvents = 'auto';
+    
+    if (playerColor === 'black') {
+      speak("Black to move");
+      fetchAIMove();
+    } else {
+      speak("White to move");
+    }
+  };
+
+  const switchToCalculator = () => {
+    mode = 'calculator';
+    calcEl.style.display = 'flex';
+    chessEl.style.opacity = '0';
+    chessEl.style.pointerEvents = 'none';
+    tapHistory = [];
+    if (speechTimeout) clearTimeout(speechTimeout);
+    speechSynthesis.cancel();
+    resetCalculator();
+  };
+
+// ===== RELIABLE STOCKFISH LOADER =====
+let stockfishPromise = null;
+
+const getStockfish = () => {
+  if (stockfishPromise) return stockfishPromise;
+
+  stockfishPromise = new Promise((resolve, reject) => {
+    // Create Stockfish worker from CDN using data URL (bypasses CORS)
+    const stockfishCode = `
+      let STOCKFISH;
+      try {
+        importScripts('https://cdn.jsdelivr.net/npm/stockfish@11.0.0/stockfish.js');
+        STOCKFISH = STOCKFISH || Worker;
+      } catch(e) {
+        self.postMessage({ error: 'import failed' });
+        return;
+      }
+      self.onmessage = (event) => {
+        const cmd = event.data;
+        if (cmd === 'init') {
+          postMessage('ready');
+        } else if (typeof cmd === 'string' && cmd.startsWith('position')) {
+          STOCKFISH.postMessage(cmd);
+          STOCKFISH.postMessage('go depth 8');
+        }
+      };
+      STOCKFISH.onmessage = (event) => {
+        const msg = event.data;
+        if (msg.startsWith('bestmove')) {
+          const move = msg.split(' ')[1];
+          postMessage({ bestmove: move });
+        }
+      };
+    `;
+
+    const blob = new Blob([stockfishCode], { type: 'application/javascript' });
+    const worker = new Worker(URL.createObjectURL(blob));
+    
+    worker.postMessage('init');
+    let ready = false;
+    worker.onmessage = (e) => {
+      if (e.data === 'ready') {
+        ready = true;
+        resolve(worker);
+      } else if (e.data && e.data.bestmove) {
+        // Forward moves
+        resolve(worker);
+        // But we'll handle move outside
+      } else if (e.data && e.data.error) {
+        reject(new Error('Stockfish init failed'));
+      }
+    };
+
+    setTimeout(() => {
+      if (!ready) reject(new Error('Stockfish timeout'));
+    }, 5000);
+  });
+
+  return stockfishPromise;
+};
+
+// ===== AI MOVE (LOCAL ONLY) =====
+const fetchAIMove = async () => {
+  if (mode !== 'chess') return;
+
+  try {
+    speak("AI thinking");
+    const fen = game.fen();
+    const worker = await getStockfish();
+    
+    // Listen for bestmove
+    const movePromise = new Promise((res) => {
+      const handler = (e) => {
+        if (e.data && e.data.bestmove) {
+          worker.removeEventListener('message', handler);
+          res(e.data.bestmove);
+        }
+      };
+      worker.addEventListener('message', handler);
+    });
+
+    worker.postMessage(`position fen ${fen}`);
+    const bestmove = await movePromise;
+    applyAIMove(bestmove);
+  } catch (err) {
+    console.error("AI failed:", err);
+    speak("Move failed");
+    vibrate([50, 50, 50]);
+  }
+};
+
+  // ===== CALCULATOR LOGIC =====
+  const handleButton = (v) => {
+    if (v === 'C') { resetCalculator(); return; }
+    if (v === '±') {
+      if (currentInput !== '0') {
+        currentInput = currentInput.startsWith('-') ? currentInput.slice(1) : '-' + currentInput;
+      }
+      updateDisplay(); return;
+    }
+    if (v === '%') {
+      const n = parseFloat(currentInput);
+      if (!isNaN(n)) currentInput = (n / 100).toString();
+      updateDisplay(); return;
+    }
+    if (v === '=') {
+      if (currentInput === '999') {
+        switchToChess('white');
+        return;
+      }
+      if (currentInput === '666') {
+        switchToChess('black');
+        return;
+      }
+      try {
+        let r = Function('"use strict"; return (' + currentInput + ')')();
+        currentInput = isNaN(r) || !isFinite(r) ? 'Error' : parseFloat(r.toFixed(10)).toString();
+      } catch (e) {
+        currentInput = 'Error';
+      }
+      operatorPressed = true;
+      updateDisplay(); return;
+    }
+    if (['+', '-', '*', '/'].includes(v)) {
+      if (operatorPressed && ['+', '-', '*', '/'].includes(currentInput.slice(-1))) {
+        currentInput = currentInput.slice(0, -1) + v;
+      } else {
+        currentInput += v;
+      }
+      operatorPressed = true;
+      updateDisplay(); return;
+    }
+    if (operatorPressed || currentInput === '0') {
+      currentInput = v === '.' ? '0.' : v;
+      operatorPressed = false;
+    } else {
+      if (v === '.') {
+        if (!currentInput.includes('.')) currentInput += '.';
+      } else {
+        currentInput += v;
+      }
+    }
+    updateDisplay();
+  };
+
+  document.querySelectorAll('.btn').forEach(btn => {
+    btn.addEventListener('click', () => handleButton(btn.dataset.value));
+  });
+
+  // ===== TOUCH HANDLING =====
+  let startY = 0;
+
+  const handleStart = (clientY) => {
+    if (mode !== 'chess') return;
+    startY = clientY;
+    isLongPressing = false;
+    longPressTimer = setTimeout(() => {
+      isLongPressing = true;
+      const isUpper = startY < window.innerHeight / 2;
+      handleLongPress(isUpper);
+    }, LONG_PRESS_MS);
+  };
+
+  const handleEnd = (clientY) => {
+    if (mode !== 'chess') return;
+    clearTimeout(longPressTimer);
+    if (isLongPressing) return;
+
+    const isUpper = clientY < window.innerHeight / 2;
+    const now = Date.now();
+    const zone = isUpper ? 'U' : 'L';
+
+    tapHistory.push({ zone, time: now });
+    if (tapHistory.length > 4) tapHistory.shift();
+    if (tapHistory.length === 4) {
+      const zones = tapHistory.map(t => t.zone).join('');
+      const duration = tapHistory[3].time - tapHistory[0].time;
+      if ((zones === 'ULUL' || zones === 'LULU') && duration <= 1200) {
+        switchToCalculator();
+        return;
+      }
+    }
+
+    if (isUpper) rank = rank % 8 + 1;
+    else file = (file + 1) % 8;
+
+    debouncedSpeak();
+  };
+
+  chessEl.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    handleStart(e.touches[0].clientY);
+  });
+
+  chessEl.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    handleEnd(e.changedTouches[0].clientY);
+  });
+
+  chessEl.addEventListener('touchcancel', () => {
+    clearTimeout(longPressTimer);
+  });
+
+  chessEl.addEventListener('mousedown', (e) => {
+    handleStart(e.clientY);
+  });
+
+  chessEl.addEventListener('mouseup', (e) => {
+    handleEnd(e.clientY);
+  });
+
+  // ===== LONG PRESS & PLAYER MOVE =====
+  const handleLongPress = (isUpper) => {
+    const coord = getCoord();
+    if (!isUpper) {
+      fromSquare = coord;
+      speak(`From ${coord}`);
+      vibrate([50]);
+    } else {
+      if (!fromSquare) {
+        speak("No from");
+        vibrate([50, 50, 50]);
+        return;
+      }
+      const move = game.move({ from: fromSquare, to: coord, promotion: 'q' });
+      if (move) {
+        speak(`To ${coord}`);
+        vibrate([200]);
+        fromSquare = null;
+
+        // After your move, AI responds if it's their turn
+        if (game.turn() === (playerColor === 'white' ? 'b' : 'w')) {
+          fetchAIMove();
+        }
+      } else {
+        speak("Invalid");
+        vibrate([50, 50, 50]);
+      }
+    }
+  };
+
+  updateDisplay();
+</script>
+</body>
+</html>
     * {
       margin: 0;
       padding: 0;
