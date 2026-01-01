@@ -15,22 +15,22 @@
     }
     body, html {
       height: 100%;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, sans-serif;
       background: #000;
+      color: white;
       overflow: hidden;
     }
     #calculator {
       display: flex;
       flex-direction: column;
       height: 100%;
-      background: #000;
-      color: #fff;
+      padding: 20px 0 0;
     }
     #display {
-      padding: 20px;
+      padding: 0 20px 20px;
       text-align: right;
-      font-size: 64px;
-      height: 30%;
+      font-size: 80px;
+      min-height: 120px;
       display: flex;
       align-items: flex-end;
       justify-content: flex-end;
@@ -42,8 +42,8 @@
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       grid-template-rows: repeat(5, 1fr);
-      gap: 12px;
-      padding: 0 12px 24px;
+      gap: 16px;
+      padding: 0 16px 24px;
       flex: 1;
     }
     .btn {
@@ -53,30 +53,28 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #fff;
+      color: white;
       border: none;
       cursor: pointer;
+    }
+    .btn:active {
+      background: #444;
     }
     .btn.operator {
       background: #f1a33c;
     }
+    .btn.operator:active {
+      background: #d99234;
+    }
     .btn.equals {
       background: #f1a33c;
+    }
+    .btn.equals:ante {
+      background: #d99234;
     }
     .btn.zero {
       grid-column: span 2;
       border-radius: 36px;
-    }
-    #chessLayer {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: #000;
-      opacity: 0;
-      pointer-events: none;
-      z-index: -1;
     }
   </style>
 </head>
@@ -85,439 +83,113 @@
     <div id="display">0</div>
     <div id="buttons">
       <button class="btn clear" data-value="C">C</button>
-      <button class="btn operator" data-value="±">±</button>
-      <button class="btn operator" data-value="%">%</button>
-      <button class="btn operator" data-value="/">÷</div>
+      <button class="btn" data-value="±">±</button>
+      <button class="btn" data-value="%">%</button>
+      <button class="btn operator" data-value="/">÷</button>
+      
       <button class="btn" data-value="7">7</button>
       <button class="btn" data-value="8">8</button>
       <button class="btn" data-value="9">9</button>
       <button class="btn operator" data-value="*">×</button>
+      
       <button class="btn" data-value="4">4</button>
       <button class="btn" data-value="5">5</button>
       <button class="btn" data-value="6">6</button>
       <button class="btn operator" data-value="-">−</button>
+      
       <button class="btn" data-value="1">1</button>
       <button class="btn" data-value="2">2</button>
       <button class="btn" data-value="3">3</button>
       <button class="btn operator" data-value="+">+</button>
+      
       <button class="btn zero" data-value="0">0</button>
       <button class="btn" data-value=".">.</button>
       <button class="btn equals" data-value="=">=</button>
     </div>
   </div>
-  <div id="chessLayer"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.min.js"></script>
   <script>
-    // ========================
-    // GLOBAL STATE
-    // ========================
-    const STATE = {
-      mode: 'calculator', // 'calculator' | 'chess'
-      chess: new Chess(),
-      fromSquare: null,
-      toSquare: null,
-      rank: 1, // 1-8
-      file: 0, // 0-7 (a-h)
-      lastTapTime: 0,
-      speechTimeout: null,
-      isMuted: false,
-      sensorsEnabled: false,
-      lightSensor: null,
-      proximitySensor: null,
-      stockfish: null,
-      stockfishReady: false,
-      stockfishWorker: null,
-    };
-
-    // ========================
-    // UTILITY FUNCTIONS
-    // ========================
-    const speak = (text) => {
-      if (STATE.isMuted) return;
-      if (STATE.speechTimeout) clearTimeout(STATE.speechTimeout);
-      STATE.speechTimeout = setTimeout(() => {
-        if ('speechSynthesis' in window) {
-          const utterance = new SpeechSynthesisUtterance(text);
-          utterance.rate = 1.9;
-          utterance.volume = 0.8;
-          utterance.lang = 'en-US';
-          speechSynthesis.speak(utterance);
-        }
-      }, 500);
-    };
-
-    const vibrate = (pattern) => {
-      if ('vibrate' in navigator) {
-        navigator.vibrate(pattern);
-      }
-    };
-
-    const fileToChar = (f) => String.fromCharCode(97 + f); // 0->'a', 7->'h'
-    const currentCoord = () => `${fileToChar(STATE.file)}${STATE.rank}`;
-
-    // ========================
-    // CHESS ENGINE
-    // ========================
-    const initStockfish = () => {
-      if (STATE.stockfishWorker) return;
-      STATE.stockfishWorker = new Worker(
-        URL.createObjectURL(
-          new Blob([
-            `self.importScripts('https://cdn.jsdelivr.net/npm/stockfish@11/src/stockfish.js');`
-          ], { type: 'application/javascript' })
-        )
-      );
-      STATE.stockfishWorker.onmessage = (event) => {
-        const msg = event.data;
-        if (msg.includes('readyok')) {
-          STATE.stockfishReady = true;
-          console.log('Stockfish ready');
-        }
-        if (msg.startsWith('bestmove')) {
-          const move = msg.split(' ')[1];
-          if (move !== '(none)') {
-            const chess = new Chess(STATE.chess.fen());
-            if (chess.move({ from: move.slice(0,2), to: move.slice(2,4) })) {
-              STATE.chess = chess;
-              speak(`Opponent: ${move}`);
-              vibrate([100]);
-            }
-          }
-        }
-      };
-      STATE.stockfishWorker.postMessage('uci');
-      STATE.stockfishWorker.postMessage('isready');
-    };
-
-    const makeCloudMove = async () => {
-      try {
-        const fen = STATE.chess.fen();
-        const res = await fetch('https://chess-api.com/v1', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fen, depth: 18 })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const move = data.bestmove;
-          if (move) {
-            const chess = new Chess(STATE.chess.fen());
-            if (chess.move({ from: move.slice(0,2), to: move.slice(2,4) })) {
-              STATE.chess = chess;
-              speak(`Opponent: ${move}`);
-              vibrate([100]);
-              return true;
-            }
-          }
-        }
-      } catch (e) {
-        console.warn('Cloud engine failed, falling back to Stockfish');
-      }
-      return false;
-    };
-
-    const makeMove = async (from, to) => {
-      if (!STATE.chess.move({ from, to })) {
-        vibrate([50, 50, 50]); // Error
-        speak('Invalid');
-        return;
-      }
-
-      // Check game end
-      if (STATE.chess.isGameOver()) {
-        if (STATE.chess.isCheckmate()) {
-          vibrate([300]); // Win
-          speak('Checkmate');
-        } else {
-          vibrate([50, 50, 50]); // Draw
-          speak('Draw');
-        }
-        return;
-      }
-
-      vibrate([200]); // Confirm
-      speak(`Move: ${from} to ${to}`);
-
-      // Opponent move
-      const cloudSuccess = await makeCloudMove();
-      if (!cloudSuccess && STATE.stockfishReady) {
-        STATE.stockfishWorker.postMessage(`position fen ${STATE.chess.fen()}`);
-        STATE.stockfishWorker.postMessage('go depth 15');
-      } else if (!cloudSuccess) {
-        initStockfish();
-      }
-    };
-
-    // ========================
-    // SENSOR HANDLING
-    // ========================
-    const initSensors = () => {
-      if (STATE.sensorsEnabled) return;
-      STATE.sensorsEnabled = true;
-
-      if ('AmbientLightSensor' in window) {
-        try {
-          STATE.lightSensor = new AmbientLightSensor({ frequency: 10 });
-          STATE.lightSensor.addEventListener('reading', () => {
-            if (STATE.lightSensor.illuminance > 15) {
-              STATE.isMuted = true;
-            }
-          });
-          STATE.lightSensor.start();
-        } catch (e) {
-          console.warn('Light sensor not available');
-        }
-      }
-
-      if ('ProximitySensor' in window) {
-        try {
-          STATE.proximitySensor = new ProximitySensor({ frequency: 10 });
-          STATE.proximitySensor.addEventListener('reading', () => {
-            if (!STATE.proximitySensor.near) {
-              STATE.isMuted = true;
-            }
-          });
-          STATE.proximitySensor.start();
-        } catch (e) {
-          console.warn('Proximity sensor not available');
-        }
-      }
-    };
-
-    // ========================
-    // UI HANDLERS
-    // ========================
-    let calculatorDisplay = '0';
+    let displayValue = '0';
     let resetOnNextInput = false;
 
+    const display = document.getElementById('display');
     const updateDisplay = () => {
-      document.getElementById('display').textContent = calculatorDisplay;
+      // Prevent overflow
+      display.textContent = displayValue.length > 12 
+        ? displayValue.slice(0, 12) + '…' 
+        : displayValue;
     };
 
-    const handleCalculatorInput = (value) => {
+    const handleInput = (value) => {
       if (value === 'C') {
-        calculatorDisplay = '0';
+        displayValue = '0';
         resetOnNextInput = false;
-      } else if (value === '±') {
-        if (calculatorDisplay !== '0') {
-          calculatorDisplay = calculatorDisplay.startsWith('-') 
-            ? calculatorDisplay.slice(1) 
-            : '-' + calculatorDisplay;
+        return;
+      }
+
+      if (value === '±') {
+        if (displayValue !== '0') {
+          displayValue = displayValue.startsWith('-') 
+            ? displayValue.slice(1) 
+            : '-' + displayValue;
         }
-      } else if (value === '%') {
-        const num = parseFloat(calculatorDisplay);
+        return;
+      }
+
+      if (value === '%') {
+        const num = parseFloat(displayValue);
         if (!isNaN(num)) {
-          calculatorDisplay = (num / 100).toString();
+          displayValue = (num / 100).toString();
         }
-      } else if (['+', '-', '*', '/', '='].includes(value)) {
+        return;
+      }
+
+      if (['+', '-', '*', '/', '='].includes(value)) {
         try {
-          // Replace × and ÷ for eval
-          let expr = calculatorDisplay
+          // Prepare expression for eval (replace symbols)
+          let expr = displayValue
             .replace(/×/g, '*')
             .replace(/÷/g, '/')
+            .replace(/−/g, '-')
             .replace(/--/g, '+');
+          
           if (value === '=') {
-            calculatorDisplay = eval(expr).toString();
+            // Evaluate and show result
+            const result = Function('"use strict"; return (' + expr + ')')();
+            displayValue = isFinite(result) ? result.toString() : 'Error';
           } else {
-            calculatorDisplay = expr + value.replace('×', '*').replace('÷', '/');
+            // Append operator
+            displayValue = expr + value.replace('×', '*').replace('÷', '/').replace('−', '-');
           }
+          resetOnNextInput = true;
         } catch (e) {
-          calculatorDisplay = 'Error';
+          displayValue = 'Error';
+          resetOnNextInput = true;
         }
-        resetOnNextInput = true;
+        return;
+      }
+
+      // Digit or decimal point
+      if (resetOnNextInput) {
+        displayValue = value === '.' ? '0.' : value;
+        resetOnNextInput = false;
       } else {
-        if (resetOnNextInput) {
-          calculatorDisplay = value === '.' ? '0.' : value;
-          resetOnNextInput = false;
+        if (value === '.') {
+          if (displayValue.includes('.')) return; // Only one decimal
+          displayValue += '.';
         } else {
-          if (value === '.' && calculatorDisplay.includes('.')) return;
-          calculatorDisplay = calculatorDisplay === '0' && value !== '.' 
-            ? value 
-            : calculatorDisplay + value;
-        }
-      }
-      updateDisplay();
-    };
-
-    // Panic pattern detection
-    let panicTaps = [];
-    const detectPanic = (zone) => {
-      const now = Date.now();
-      panicTaps.push({ zone, time: now });
-      panicTaps = panicTaps.filter(t => now - t.time < 1000); // Keep last 1s
-
-      if (panicTaps.length >= 4) {
-        const pattern = panicTaps.slice(-4).map(t => t.zone);
-        if (pattern.join('') === 'upperlowerupperlower' || pattern.join('') === 'lowerupperlowerupper') {
-          switchToCalculator();
-          panicTaps = [];
+          displayValue = displayValue === '0' ? value : displayValue + value;
         }
       }
     };
 
-    const switchToCalculator = () => {
-      STATE.mode = 'calculator';
-      document.getElementById('calculator').style.display = 'flex';
-      document.getElementById('chessLayer').style.opacity = '0';
-      document.getElementById('chessLayer').style.pointerEvents = 'none';
-      calculatorDisplay = '0';
-      updateDisplay();
-    };
-
-    const switchToChess = () => {
-      STATE.mode = 'chess';
-      document.getElementById('calculator').style.display = 'none';
-      document.getElementById('chessLayer').style.opacity = '1';
-      document.getElementById('chessLayer').style.pointerEvents = 'auto';
-      STATE.fromSquare = null;
-      STATE.toSquare = null;
-      STATE.rank = 1;
-      STATE.file = 0;
-      speak('Chess mode');
-    };
-
-    // ========================
-    // CHESS INPUT HANDLING
-    // ========================
-    let upperHold = false;
-    let lowerHold = false;
-    let bothHoldStart = null;
-
-    const handleUpperTap = () => {
-      if (STATE.mode !== 'chess') return;
-      detectPanic('upper');
-      STATE.rank = STATE.rank % 8 + 1;
-      speak(STATE.rank.toString());
-    };
-
-    const handleLowerTap = () => {
-      if (STATE.mode !== 'chess') return;
-      detectPanic('lower');
-      STATE.file = (STATE.file + 1) % 8;
-      speak(fileToChar(STATE.file));
-    };
-
-    const handleUpperHold = () => {
-      if (STATE.mode !== 'chess') return;
-      upperHold = true;
-      if (STATE.fromSquare) {
-        const to = currentCoord();
-        makeMove(STATE.fromSquare, to);
-        STATE.fromSquare = null;
-      }
-    };
-
-    const handleLowerHold = () => {
-      if (STATE.mode !== 'chess') return;
-      lowerHold = true;
-      STATE.fromSquare = currentCoord();
-      speak(`From ${STATE.fromSquare}`);
-    };
-
-    const handleBothHold = () => {
-      if (STATE.mode !== 'chess') return;
-      if (!bothHoldStart) {
-        bothHoldStart = Date.now();
-      } else if (Date.now() - bothHoldStart > 1000) {
-        // Trigger full report
-        fetch('https://chess-api.com/v1', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fen: STATE.chess.fen(), depth: 15 })
-        })
-        .then(res => res.json())
-        .then(data => {
-          const move = data.bestmove || 'none';
-          const evalScore = data.evaluation?.score || '0';
-          const logic = data.explanation?.slice(0,2).join(' ') || 'No data';
-          speak(`Best: ${move}. Eval: ${evalScore}. ${logic}`);
-        })
-        .catch(() => speak('No cloud data'));
-        bothHoldStart = null;
-      }
-    };
-
-    const resetHoldState = () => {
-      upperHold = false;
-      lowerHold = false;
-      bothHoldStart = null;
-    };
-
-    // ========================
-    // EVENT LISTENERS
-    // ========================
-    // Calculator buttons
+    // Attach event listeners
     document.querySelectorAll('.btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        const value = btn.dataset.value;
-        handleCalculatorInput(value);
-        if (value === '=') {
-          if (calculatorDisplay === '999') {
-            switchToChess();
-          }
-        }
+        handleInput(btn.dataset.value);
+        updateDisplay();
       });
     });
-
-    // Chess layer touch handling
-    const chessLayer = document.getElementById('chessLayer');
-    let startY = 0;
-    let isLongPressTimer = null;
-    let isDoubleTap = false;
-    let lastTap = 0;
-
-    chessLayer.addEventListener('touchstart', (e) => {
-      if (STATE.mode !== 'chess') return;
-      initSensors(); // Request sensor permissions on first interaction
-      e.preventDefault();
-      const touch = e.touches[0];
-      startY = touch.clientY;
-      const screenHeight = window.innerHeight;
-      const zone = touch.clientY < screenHeight / 2 ? 'upper' : 'lower';
-
-      // Double-tap for unmute
-      const now = Date.now();
-      if (now - lastTap < 300 && zone === 'upper') {
-        isDoubleTap = true;
-        STATE.isMuted = false;
-        speak('Audio on');
-      }
-      lastTap = now;
-
-      // Long press detection
-      isLongPressTimer = setTimeout(() => {
-        if (zone === 'upper') handleUpperHold();
-        else handleLowerHold();
-        if (upperHold && lowerHold) handleBothHold();
-      }, 600);
-    });
-
-    chessLayer.addEventListener('touchmove', (e) => {
-      if (STATE.mode !== 'chess') return;
-      e.preventDefault();
-      if (isLongPressTimer) {
-        clearTimeout(isLongPressTimer);
-        isLongPressTimer = null;
-      }
-    });
-
-    chessLayer.addEventListener('touchend', (e) => {
-      if (STATE.mode !== 'chess') return;
-      e.preventDefault();
-      if (isLongPressTimer) {
-        clearTimeout(isLongPressTimer);
-        const touch = e.changedTouches[0];
-        const screenHeight = window.innerHeight;
-        const zone = touch.clientY < screenHeight / 2 ? 'upper' : 'lower';
-        if (zone === 'upper') handleUpperTap();
-        else handleLowerTap();
-      }
-      resetHoldState();
-    });
-
-    // Prevent context menu
-    document.addEventListener('contextmenu', (e) => e.preventDefault());
 
     // Initial display
     updateDisplay();
