@@ -71,7 +71,6 @@
       border-radius: 36px;
     }
 
-    /* ✅ INVISIBLE CHESS LAYER — 100% BLACK */
     #chessLayer {
       position: absolute;
       top: 0;
@@ -85,6 +84,7 @@
   </style>
 </head>
 <body>
+  <!-- Calculator UI -->
   <div id="calculator">
     <div id="display">0</div>
     <div id="buttons">
@@ -116,14 +116,23 @@
 
   <div id="chessLayer"></div>
 
+  <!-- Load chess.js from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.min.js"></script>
+
   <script>
     // ===== GLOBAL STATE =====
     let mode = 'calculator';
-    let file = 0; // a=0 ... h=7
-    let rank = 1; // 1-8
+    let file = 0, rank = 1;
     let tapHistory = [];
     let speechTimeout = null;
     let isSpeechInitialized = false;
+    let longPressTimer = null;
+    let isLongPressing = false;
+    const LONG_PRESS_MS = 600;
+
+    // Chess state
+    let game = new Chess();
+    let fromSquare = null;
 
     // Calculator state
     let currentInput = '0';
@@ -134,23 +143,25 @@
     const chessEl = document.getElementById('chessLayer');
     const display = document.getElementById('display');
 
+    // ===== HAPTIC FEEDBACK =====
+    const vibrate = (pattern) => {
+      if (navigator.vibrate) {
+        navigator.vibrate(pattern);
+      }
+      // Fallback: no-op if unsupported
+    };
+
     // ===== SPEECH =====
     const speak = (text) => {
-      // Initialize speech on first use (requires user gesture)
       if (!isSpeechInitialized) {
-        // Force synthesis to initialize
         speechSynthesis.cancel();
         isSpeechInitialized = true;
       }
-
-      // Cancel any pending speech
       speechSynthesis.cancel();
-
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.9;    // telegraphic speed
-      utterance.volume = 0.8;  // slightly quiet
+      utterance.rate = 1.9;
+      utterance.volume = 0.8;
       utterance.lang = 'en-US';
-
       speechSynthesis.speak(utterance);
     };
 
@@ -159,7 +170,7 @@
       speechTimeout = setTimeout(() => {
         const coord = String.fromCharCode(97 + file) + rank;
         speak(coord);
-      }, 500); // only after 500ms pause
+      }, 500);
     };
 
     // ===== MODE SWITCHING =====
@@ -175,8 +186,9 @@
 
     const switchToChess = () => {
       mode = 'chess';
-      file = 0;
-      rank = 1;
+      file = 0; rank = 1;
+      fromSquare = null;
+      game = new Chess(); // reset game
       calcEl.style.display = 'none';
       chessEl.style.opacity = '1';
       chessEl.style.pointerEvents = 'auto';
@@ -189,7 +201,7 @@
       chessEl.style.pointerEvents = 'none';
       tapHistory = [];
       if (speechTimeout) clearTimeout(speechTimeout);
-      speechSynthesis.cancel(); // stop any speech
+      speechSynthesis.cancel();
       resetCalculator();
     };
 
@@ -248,17 +260,57 @@
     });
 
     // ===== CHESS TOUCH HANDLING =====
-    chessEl.addEventListener('click', (e) => {
-      if (mode !== 'chess') return;
+    const getCoord = () => String.fromCharCode(97 + file) + rank;
 
-      const now = Date.now();
+    chessEl.addEventListener('touchstart', (e) => {
+      if (mode !== 'chess') return;
+      e.preventDefault();
+      startLongPress(e);
+    });
+
+    chessEl.addEventListener('mousedown', (e) => {
+      if (mode !== 'chess') return;
+      startLongPress(e);
+    });
+
+    const startLongPress = (e) => {
+      isLongPressing = false;
       const isUpper = e.clientY < window.innerHeight / 2;
+
+      longPressTimer = setTimeout(() => {
+        isLongPressing = true;
+        handleLongPress(isUpper);
+      }, LONG_PRESS_MS);
+    };
+
+    chessEl.addEventListener('touchend', (e) => {
+      if (mode !== 'chess') return;
+      e.preventDefault();
+      handleTapOrRelease(e);
+    });
+
+    chessEl.addEventListener('mouseup', (e) => {
+      if (mode !== 'chess') return;
+      handleTapOrRelease(e);
+    });
+
+    chessEl.addEventListener('touchcancel', () => {
+      if (mode !== 'chess') return;
+      clearTimeout(longPressTimer);
+    });
+
+    const handleTapOrRelease = (e) => {
+      clearTimeout(longPressTimer);
+      if (isLongPressing) return; // already handled
+
+      // Regular tap: cycle coords
+      const isUpper = e.clientY < window.innerHeight / 2;
+      const now = Date.now();
       const zone = isUpper ? 'U' : 'L';
 
-      // Speed-gated panic pattern
+      // Panic pattern
       tapHistory.push({ zone, time: now });
       if (tapHistory.length > 4) tapHistory.shift();
-
       if (tapHistory.length === 4) {
         const zones = tapHistory.map(t => t.zone).join('');
         const duration = tapHistory[3].time - tapHistory[0].time;
@@ -268,16 +320,45 @@
         }
       }
 
-      // Cycle coordinates
-      if (isUpper) {
-        rank = rank % 8 + 1;
-      } else {
-        file = (file + 1) % 8;
-      }
+      // Cycle
+      if (isUpper) rank = rank % 8 + 1;
+      else file = (file + 1) % 8;
 
-      // Trigger debounced speech
       debouncedSpeak();
-    });
+    };
+
+    const handleLongPress = (isUpper) => {
+      const coord = getCoord();
+
+      if (!isUpper) {
+        // Lower Zone long press → set "from"
+        fromSquare = coord;
+        speak(`From ${coord}`);
+        vibrate([50]); // short tick
+      } else {
+        // Upper Zone long press → confirm move
+        if (!fromSquare) {
+          speak("No from square");
+          vibrate([50, 50, 50]); // error
+          return;
+        }
+
+        const move = game.move({
+          from: fromSquare,
+          to: coord,
+          promotion: 'q' // auto-promote to queen
+        });
+
+        if (move) {
+          speak(`Move ${fromSquare} to ${coord}`);
+          vibrate([200]); // long confirm
+          fromSquare = null; // reset
+        } else {
+          speak("Invalid");
+          vibrate([50, 50, 50]); // error
+        }
+      }
+    };
 
     updateDisplay();
   </script>
