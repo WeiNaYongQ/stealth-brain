@@ -81,10 +81,6 @@
       opacity: 0;
       pointer-events: none;
     }
-
-    #engineInput {
-      display: none;
-    }
   </style>
 </head>
 <body>
@@ -118,7 +114,6 @@
   </div>
 
   <div id="chessLayer"></div>
-  <input type="file" id="engineInput" accept=".js" />
 
   <!-- chess.js -->
   <script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.min.js"></script>
@@ -138,6 +133,9 @@
     let fromSquare = null;
     let playerColor = 'white';
     let customEngine = null;
+    let lastAIMove = null;
+    let latestBestMove = null;
+    let searchAbortController = null;
 
     let currentInput = '0';
     let operatorPressed = false;
@@ -145,13 +143,13 @@
     const calcEl = document.getElementById('calculator');
     const chessEl = document.getElementById('chessLayer');
     const display = document.getElementById('display');
-    const engineInput = document.getElementById('engineInput');
 
     // ===== UTILS =====
     const vibrate = (pattern) => {
       if (navigator.vibrate) navigator.vibrate(pattern);
     };
 
+    // Fast speech for coords
     const speak = (text) => {
       if (!isSpeechInitialized) {
         speechSynthesis.cancel();
@@ -162,6 +160,20 @@
       const utterance = new SpeechSynthesisUtterance(clean);
       utterance.rate = 1.7;
       utterance.volume = 0.85;
+      utterance.lang = 'en-US';
+      speechSynthesis.speak(utterance);
+    };
+
+    // Clear speech for moves
+    const speakMove = (text) => {
+      if (!isSpeechInitialized) {
+        speechSynthesis.cancel();
+        isSpeechInitialized = true;
+      }
+      speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.3; // ✅ Slower for clarity
+      utterance.volume = 0.9;
       utterance.lang = 'en-US';
       speechSynthesis.speak(utterance);
     };
@@ -187,19 +199,38 @@
       display.textContent = currentInput.length > 12 ? parseFloat(currentInput).toExponential(5) : currentInput;
     };
 
+    // ✅ AUTO-LOAD LOCAL STOCKFISH
+    const initLocalEngine = () => {
+      if (customEngine) return;
+      try {
+        customEngine = new Worker('./stockfish.wasm.js');
+        customEngine.postMessage('uci');
+        customEngine.onerror = () => {
+          customEngine = null;
+        };
+      } catch (err) {
+        customEngine = null;
+      }
+    };
+
     const switchToChess = (color) => {
       playerColor = color;
       mode = 'chess';
       file = 0; rank = 1;
       fromSquare = null;
+      lastAIMove = null;
+      latestBestMove = null;
       game = new Chess();
       calcEl.style.display = 'none';
       chessEl.style.opacity = '1';
       chessEl.style.pointerEvents = 'auto';
       
+      initLocalEngine();
+
       if (playerColor === 'black') {
-        speak("Black to move");
-        fetchAIMove();
+        setTimeout(() => {
+          startBackgroundSearch(); // Black moves first
+        }, 800);
       } else {
         speak("White to move");
       }
@@ -216,99 +247,192 @@
       resetCalculator();
     };
 
-    // ===== ENGINE LOADER =====
-    const loadCustomEngine = (file) => {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          try {
-            const workerCode = `
-              ${reader.result}
-              let engineInstance;
-              if (typeof Stockfish === 'function') {
-                engineInstance = new Stockfish();
-                engineInstance.onmessage = (e) => postMessage(e.data);
-              }
-              self.onmessage = (e) => {
-                if (engineInstance) engineInstance.postMessage(e.data);
-                else if (typeof postMessage === 'function') postMessage(e.data);
-              };
-            `;
-            const blob = new Blob([workerCode], { type: 'application/javascript' });
-            const url = URL.createObjectURL(blob);
-            customEngine = new Worker(url);
-            customEngine.postMessage('uci');
-            customEngine.onmessage = (e) => {
-              if (e.data && e.data.includes('uciok')) {
-                resolve();
-              }
+    // ===== BACKGROUND SEARCH =====
+    const startBackgroundSearch = () => {
+      if (!customEngine || mode !== 'chess') return;
+
+      // Cancel previous search
+      if (searchAbortController) {
+        searchAbortController.abort();
+      }
+      searchAbortController = new AbortController();
+
+      // Listen for bestmove
+      customEngine.onmessage = (e) => {
+        const msg = e.data;
+        if (typeof msg === 'string' && msg.startsWith('bestmove')) {
+          const moveStr = msg.split(' ')[1];
+          if (moveStr && moveStr.length >= 4) {
+            latestBestMove = {
+              from: moveStr.slice(0, 2),
+              to: moveStr.slice(2, 4)
             };
-            setTimeout(() => reject(new Error('timeout')), 5000);
-          } catch (err) {
-            reject(err);
           }
-        };
-        reader.onerror = () => reject(new Error('Read failed'));
-        reader.readAsText(file);
-      });
+        }
+      };
+
+      customEngine.postMessage(`position fen ${game.fen()}`);
+      customEngine.postMessage('go depth 12');
     };
 
-    engineInput.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (file) {
-        try {
-          await loadCustomEngine(file);
-          vibrate([50, 100]);
-        } catch (err) {
-          customEngine = null;
-          vibrate([50, 50, 50]);
-        }
-      }
-    });
-
-    // ===== AI MOVE: CLOUD + LOCAL + FALLBACK =====
+    // ===== FALLBACK AI MOVE =====
     const getRandomMove = (chessInstance) => {
       const moves = chessInstance.moves({ verbose: true });
       if (moves.length === 0) return null;
       return moves[Math.floor(Math.random() * moves.length)];
     };
 
-    const fetchAIMove = async () => {
-      if (mode !== 'chess') return;
-      const fen = game.fen();
+    const fallbackAIMove = () => {
+      const aiMove = getRandomMove(game);
+      if (aiMove) {
+        lastAIMove = { from: aiMove.from, to: aiMove.to };
+        game.move(aiMove);
+        speakMove(`Opponent ${aiMove.from} to ${aiMove.to}`);
+        vibrate([100]);
+      } else {
+        speak("Game over");
+        vibrate([50, 50, 50]);
+      }
+    };
 
-      // 🌐 Try chess-api.com
-      try {
-        speak("Cloud AI");
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
-        const res = await fetch('https://chess-api.com/v1', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fen, depth: 12 }),
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.move && data.move.length >= 4) {
-            const from = data.move.slice(0, 2);
-            const to = data.move.slice(2, 4);
-            const move = game.move({ from, to, promotion: 'q' });
-            if (move) {
-              speak(`Opponent ${from} to ${to}`);
+    // ===== TOUCH HANDLING — LIVE REPEAT =====
+    let lastUpperTap = 0;
+    const DOUBLE_TAP_DELAY = 300;
+
+    let startY = 0;
+    const handleStart = (clientY) => {
+      if (mode !== 'chess') return;
+      startY = clientY;
+      isLongPressing = false;
+      longPressTimer = setTimeout(() => {
+        isLongPressing = true;
+        const isUpper = startY < window.innerHeight / 2;
+        handleLongPress(isUpper);
+      }, LONG_PRESS_MS);
+    };
+
+    const handleEnd = (clientY) => {
+      if (mode !== 'chess') return;
+      clearTimeout(longPressTimer);
+      if (isLongPressing) return;
+
+      const isUpper = clientY < window.innerHeight / 2;
+      const now = Date.now();
+      const zone = isUpper ? 'U' : 'L';
+
+      // ✅ Double-tap: speak LATEST best move
+      if (isUpper) {
+        if (now - lastUpperTap < DOUBLE_TAP_DELAY) {
+          if (speechTimeout) clearTimeout(speechTimeout);
+          speechSynthesis.cancel();
+          
+          if (latestBestMove) {
+            speakMove(`Best move: ${latestBestMove.from} to ${latestBestMove.to}`);
+          } else if (lastAIMove) {
+            speakMove(`Opponent: ${lastAIMove.from} to ${lastAIMove.to}`);
+          }
+          vibrate([50]);
+          lastUpperTap = 0;
+          return;
+        }
+        lastUpperTap = now;
+      }
+
+      // Panic pattern
+      tapHistory.push({ zone, time: now });
+      if (tapHistory.length > 4) tapHistory.shift();
+      if (tapHistory.length === 4) {
+        const zones = tapHistory.map(t => t.zone).join('');
+        const duration = tapHistory[3].time - tapHistory[0].time;
+        if ((zones === 'ULUL' || zones === 'LULU') && duration <= 1200) {
+          switchToCalculator();
+          return;
+        }
+      }
+
+      if (isUpper) rank = rank % 8 + 1;
+      else file = (file + 1) % 8;
+
+      debouncedSpeak();
+    };
+
+    chessEl.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      handleStart(e.touches[0].clientY);
+    });
+
+    chessEl.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      handleEnd(e.changedTouches[0].clientY);
+    });
+
+    chessEl.addEventListener('touchcancel', () => {
+      clearTimeout(longPressTimer);
+    });
+
+    chessEl.addEventListener('mousedown', (e) => {
+      handleStart(e.clientY);
+    });
+
+    chessEl.addEventListener('mouseup', (e) => {
+      handleEnd(e.clientY);
+    });
+
+    // ===== LONG PRESS WITH BACKGROUND SEARCH =====
+    const handleLongPress = (isUpper) => {
+      const coord = getCoord();
+      if (!isUpper) {
+        // Set "from" and start background search
+        fromSquare = coord;
+        speak(`From ${coord}`);
+        vibrate([50]);
+        file = 0;
+        rank = 1;
+        startBackgroundSearch(); // ✅ Start thinking now
+      } else {
+        if (!fromSquare) {
+          speak("No from");
+          vibrate([50, 50, 50]);
+          return;
+        }
+        const move = game.move({ from: fromSquare, to: coord, promotion: 'q' });
+        if (move) {
+          speak(`To ${coord}`);
+          vibrate([200]);
+          fromSquare = null;
+          file = 0;
+          rank = 1;
+
+          // ✅ Use latest best move if available
+          if (latestBestMove) {
+            const aiMove = game.move({
+              from: latestBestMove.from,
+              to: latestBestMove.to,
+              promotion: 'q'
+            });
+            if (aiMove) {
+              lastAIMove = latestBestMove;
+              speakMove(`Opponent ${latestBestMove.from} to ${latestBestMove.to}`);
               vibrate([100]);
+              latestBestMove = null;
               return;
             }
           }
-        }
-      } catch (err) {
-        // Continue to local
-      }
 
-      // 💻 Local engine
+          // Fallback
+          if (game.turn() === (playerColor === 'white' ? 'b' : 'w')) {
+            speak("Thinking");
+            setTimeout(fetchFallbackMove, 300);
+          }
+        } else {
+          speak("Invalid");
+          vibrate([50, 50, 50]);
+        }
+      }
+    };
+
+    const fetchFallbackMove = () => {
       if (customEngine) {
-        speak("Local engine");
         customEngine.onmessage = (e) => {
           const msg = e.data;
           if (typeof msg === 'string' && msg.startsWith('bestmove')) {
@@ -318,27 +442,19 @@
               const to = moveStr.slice(2, 4);
               const move = game.move({ from, to, promotion: 'q' });
               if (move) {
-                speak(`Opponent ${from} to ${to}`);
+                lastAIMove = { from, to };
+                speakMove(`Opponent ${from} to ${to}`);
                 vibrate([100]);
+                return;
               }
             }
           }
+          fallbackAIMove();
         };
-        customEngine.postMessage(`position fen ${fen}`);
+        customEngine.postMessage(`position fen ${game.fen()}`);
         customEngine.postMessage('go depth 12');
-        return;
-      }
-
-      // 🎲 Fallback
-      speak("Basic AI");
-      const aiMove = getRandomMove(game);
-      if (aiMove) {
-        game.move(aiMove);
-        speak(`Opponent ${aiMove.from} to ${aiMove.to}`);
-        vibrate([100]);
       } else {
-        speak("Game over");
-        vibrate([50, 50, 50]);
+        fallbackAIMove();
       }
     };
 
@@ -363,11 +479,6 @@
         }
         if (currentInput === '666') {
           switchToChess('black');
-          return;
-        }
-        if (currentInput === '888') {
-          engineInput.click();
-          resetCalculator();
           return;
         }
         try {
@@ -404,118 +515,6 @@
     document.querySelectorAll('.btn').forEach(btn => {
       btn.addEventListener('click', () => handleButton(btn.dataset.value));
     });
-
-    // ===== MULTI-TOUCH HANDLING (HOLD BOTH ZONES) =====
-    let activeTouches = new Map(); // id → { y, startTime }
-    let deepBriefingTimer = null;
-
-    const checkDeepBriefing = () => {
-      if (activeTouches.size < 2) return;
-      let hasUpper = false;
-      let hasLower = false;
-      for (let touch of activeTouches.values()) {
-        if (touch.y < window.innerHeight / 2) hasUpper = true;
-        else hasLower = true;
-      }
-      if (hasUpper && hasLower) {
-        if (!deepBriefingTimer) {
-          deepBriefingTimer = setTimeout(() => {
-            speak("Deep briefing ready");
-            vibrate([50, 100, 50]);
-            deepBriefingTimer = null;
-          }, 1000);
-        }
-      } else {
-        if (deepBriefingTimer) {
-          clearTimeout(deepBriefingTimer);
-          deepBriefingTimer = null;
-        }
-      }
-    };
-
-    const handleTouchEnd = (e) => {
-      for (let touch of e.changedTouches) {
-        activeTouches.delete(touch.identifier);
-      }
-      if (deepBriefingTimer) {
-        clearTimeout(deepBriefingTimer);
-        deepBriefingTimer = null;
-      }
-      if (activeTouches.size === 1 && mode === 'chess') {
-        const touch = activeTouches.values().next().value;
-        const isUpper = touch.y < window.innerHeight / 2;
-        longPressTimer = setTimeout(() => {
-          isLongPressing = true;
-          handleLongPress(isUpper);
-        }, LONG_PRESS_MS);
-      }
-    };
-
-    chessEl.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      for (let touch of e.changedTouches) {
-        activeTouches.set(touch.identifier, {
-          y: touch.clientY,
-          startTime: Date.now()
-        });
-      }
-      checkDeepBriefing();
-    });
-
-    chessEl.addEventListener('touchend', (e) => {
-      e.preventDefault();
-      handleTouchEnd(e);
-    });
-
-    chessEl.addEventListener('touchcancel', (e) => {
-      handleTouchEnd(e);
-    });
-
-    // Mouse fallback (desktop)
-    chessEl.addEventListener('mousedown', (e) => {
-      activeTouches.set('mouse', { y: e.clientY, startTime: Date.now() });
-      checkDeepBriefing();
-    });
-
-    chessEl.addEventListener('mouseup', () => {
-      activeTouches.clear();
-      if (deepBriefingTimer) {
-        clearTimeout(deepBriefingTimer);
-        deepBriefingTimer = null;
-      }
-    });
-
-    // ===== LONG PRESS WITH COORD RESET =====
-    const handleLongPress = (isUpper) => {
-      const coord = getCoord();
-      if (!isUpper) {
-        fromSquare = coord;
-        speak(`From ${coord}`);
-        vibrate([50]);
-        file = 0;
-        rank = 1;
-      } else {
-        if (!fromSquare) {
-          speak("No from");
-          vibrate([50, 50, 50]);
-          return;
-        }
-        const move = game.move({ from: fromSquare, to: coord, promotion: 'q' });
-        if (move) {
-          speak(`To ${coord}`);
-          vibrate([200]);
-          fromSquare = null;
-          file = 0;
-          rank = 1;
-          if (game.turn() === (playerColor === 'white' ? 'b' : 'w')) {
-            setTimeout(fetchAIMove, 300);
-          }
-        } else {
-          speak("Invalid");
-          vibrate([50, 50, 50]);
-        }
-      }
-    };
 
     updateDisplay();
   </script>
