@@ -27,7 +27,7 @@
       padding: 20px 0 0;
     }
     #display {
-      padding: 0 20px 20px;
+      padding: 0 20,20px;
       text-align: right;
       font-size: 80px;
       min-height: 120px;
@@ -70,9 +70,23 @@
       grid-column: span 2;
       border-radius: 36px;
     }
+
+    /* 🔒 INVISIBLE CHESS LAYER */
+    #chessLayer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 10;
+    }
   </style>
 </head>
 <body>
+  <!-- Calculator UI -->
   <div id="calculator">
     <div id="display">0</div>
     <div id="buttons">
@@ -102,123 +116,170 @@
     </div>
   </div>
 
+  <!-- 🕳️ INVISIBLE CHESS LAYER -->
+  <div id="chessLayer"></div>
+
   <script>
+    // ===== STATE =====
+    let mode = 'calculator'; // 'calculator' or 'chess'
     let currentInput = '0';
-    let operatorPressed = false;
+    let resetNext = false;
+    let tapHistory = []; // for panic pattern: ['U','L','U','L']
 
-    const display = document.getElementById('display');
-    
+    // ===== DOM ELEMENTS =====
+    const displayEl = document.getElementById('display');
+    const calculatorEl = document.getElementById('calculator');
+    const chessLayer = document.getElementById('chessLayer');
+
+    // ===== DISPLAY LOGIC =====
+    const formatForDisplay = (expr) => {
+      return expr.replace(/\*/g, '×').replace(/\//g, '÷').replace(/-/g, '−');
+    };
+
     const updateDisplay = () => {
-      // Truncate long numbers
-      let text = currentInput;
+      let text = formatForDisplay(currentInput);
       if (text.length > 12) {
-        text = parseFloat(text).toExponential(5);
+        try {
+          const num = parseFloat(currentInput);
+          if (!isNaN(num)) text = num.toExponential(5);
+        } catch (e) {}
       }
-      display.textContent = text;
+      displayEl.textContent = text || '0';
     };
 
-    const clearAll = () => {
+    // ===== MODE SWITCHING =====
+    const switchToChess = () => {
+      mode = 'chess';
+      calculatorEl.style.display = 'none';
+      chessLayer.style.opacity = '1';
+      chessLayer.style.pointerEvents = 'auto';
+      tapHistory = []; // reset tap history
+    };
+
+    const switchToCalculator = () => {
+      mode = 'calculator';
+      calculatorEl.style.display = 'flex';
+      chessLayer.style.opacity = '0';
+      chessLayer.style.pointerEvents = 'none';
       currentInput = '0';
-      operatorPressed = false;
+      updateDisplay();
+      tapHistory = [];
     };
 
+    // ===== CALCULATOR LOGIC =====
     const handleButton = (value) => {
-      // Clear
+      if (mode !== 'calculator') return; // safety
+
       if (value === 'C') {
-        clearAll();
+        currentInput = '0';
+        resetNext = false;
         return;
       }
-
-      // Plus/Minus
       if (value === '±') {
         if (currentInput !== '0') {
-          if (currentInput.startsWith('-')) {
-            currentInput = currentInput.slice(1);
-          } else {
-            currentInput = '-' + currentInput;
-          }
+          currentInput = currentInput.startsWith('-') ? currentInput.slice(1) : '-' + currentInput;
         }
         return;
       }
-
-      // Percentage
       if (value === '%') {
         const num = parseFloat(currentInput);
-        if (!isNaN(num)) {
-          currentInput = (num / 100).toString();
-        }
+        if (!isNaN(num)) currentInput = (num / 100).toString();
         return;
       }
-
-      // Equals
       if (value === '=') {
+        // 🔑 SECRET EXIT: 999 + = → CHESS MODE
+        if (currentInput === '999') {
+          switchToChess();
+          return;
+        }
+
         try {
-          // Clean the expression for eval
-          let expr = currentInput
-            .replace(/×/g, '*')
-            .replace(/÷/g, '/')
-            .replace(/−/g, '-') // note: this is MINUS SIGN (U+2212), not HYPHEN
-            .replace(/[^-()\d/*+.]/g, ''); // remove any unsafe chars
-
-          // Prevent empty or invalid
-          if (!expr || expr === '-') return;
-
-          // Use Function instead of eval for slight safety (still not perfect, but ok for calculator)
-          const result = Function('"use strict"; return (' + expr + ')')();
-          
+          if (!currentInput || currentInput === '-') return;
+          const result = Function('"use strict"; return (' + currentInput + ')')();
           if (isNaN(result) || !isFinite(result)) {
             currentInput = 'Error';
           } else {
-            // Format result
             currentInput = parseFloat(result.toFixed(10)).toString();
           }
         } catch (e) {
           currentInput = 'Error';
         }
-        operatorPressed = true; // Next digit will reset
+        resetNext = true;
+        updateDisplay();
         return;
       }
-
-      // Operators (+, -, ×, ÷)
       if (['+', '-', '*', '/'].includes(value)) {
-        const symbol = value === '*' ? '×' : value === '/' ? '÷' : value === '-' ? '−' : '+';
-        if (operatorPressed) {
-          // Replace last operator
-          const lastChar = currentInput.slice(-1);
-          if (['+', '−', '×', '÷'].includes(lastChar)) {
-            currentInput = currentInput.slice(0, -1) + symbol;
-          } else {
-            currentInput += symbol;
-          }
-        } else {
-          currentInput += symbol;
+        if (resetNext) {
+          currentInput = '0';
+          resetNext = false;
         }
-        operatorPressed = true;
+        if (['+', '-', '*', '/'].includes(currentInput.slice(-1))) {
+          currentInput = currentInput.slice(0, -1);
+        }
+        currentInput += value;
+        updateDisplay();
         return;
       }
-
-      // Digits and decimal
-      if (operatorPressed || currentInput === '0') {
+      if (resetNext || (currentInput === '0' && value !== '.')) {
         currentInput = value === '.' ? '0.' : value;
-        operatorPressed = false;
+        resetNext = false;
       } else {
         if (value === '.') {
-          if (currentInput.includes('.')) return;
+          const parts = currentInput.split(/[\+\-\*\/]/);
+          const lastPart = parts[parts.length - 1];
+          if (lastPart.includes('.')) return;
           currentInput += '.';
         } else {
           currentInput += value;
         }
       }
+      updateDisplay();
     };
 
-    // Attach events
+    // ===== EVENT LISTENERS =====
     document.querySelectorAll('.btn').forEach(btn => {
       btn.addEventListener('click', () => {
         handleButton(btn.dataset.value);
-        updateDisplay();
       });
     });
 
+    // ===== CHESS LAYER TOUCH HANDLING (for panic pattern) =====
+    chessLayer.addEventListener('touchstart', (e) => {
+      if (mode !== 'chess') return;
+      e.preventDefault();
+      const touch = e.touches[0];
+      const centerY = window.innerHeight / 2;
+      const zone = touch.clientY < centerY ? 'U' : 'L';
+
+      // Record tap
+      tapHistory.push(zone);
+      // Keep only last 4
+      if (tapHistory.length > 4) {
+        tapHistory.shift();
+      }
+
+      // Check for ULUL or LULU
+      if (tapHistory.length === 4) {
+        const pattern = tapHistory.join('');
+        if (pattern === 'ULUL' || pattern === 'LULU') {
+          switchToCalculator();
+          return;
+        }
+      }
+
+      // Clear history after 1.5s of inactivity
+      clearTimeout(window.tapTimeout);
+      window.tapTimeout = setTimeout(() => {
+        tapHistory = [];
+      }, 1500);
+    });
+
+    // Prevent scrolling/menus
+    document.addEventListener('touchmove', (e) => {
+      if (mode === 'chess') e.preventDefault();
+    }, { passive: false });
+
+    // Initial display
     updateDisplay();
   </script>
 </body>
