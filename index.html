@@ -10,16 +10,17 @@
       padding: 0;
       box-sizing: border-box;
       -webkit-tap-highlight-color: transparent;
-      -webkit-touch-callout: none;
       user-select: none;
     }
     body, html {
       height: 100%;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #000;
       color: white;
       overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }
+
+    /* === CALCULATOR === */
     #calculator {
       display: flex;
       flex-direction: column;
@@ -34,9 +35,6 @@
       display: flex;
       align-items: flex-end;
       justify-content: flex-end;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
     }
     #buttons {
       display: grid;
@@ -55,23 +53,30 @@
       justify-content: center;
       color: white;
       border: none;
-      cursor: pointer;
     }
-    .btn:active {
-      background: #444;
-    }
-    .btn.operator {
-      background: #f1a33c;
-    }
-    .btn.operator:active {
-      background: #d99234;
-    }
+    .btn:active { background: #444; }
+    .btn.operator { background: #f1a33c; }
+    .btn.operator:active { background: #d99234; }
     .btn.zero {
       grid-column: span 2;
       border-radius: 36px;
     }
 
-    /* 🔴 VERY VISIBLE DEBUG — FOR TESTING ONLY */
+    /* ✅ CRITICAL: CHESS LAYER MUST COVER FULL SCREEN */
+    #chessLayer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      opacity: 0;
+      pointer-events: none;
+      /* No tap highlight */
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* 🔴 DEBUG BOX */
     #debug {
       position: absolute;
       top: 20px;
@@ -84,7 +89,7 @@
       font-size: 18px;
       font-weight: bold;
       z-index: 9999;
-      pointer-events: none;
+      display: none;
     }
   </style>
 </head>
@@ -119,116 +124,95 @@
   </div>
 
   <div id="chessLayer"></div>
-  
-  <!-- 🔴 BIG RED DEBUG BOX -->
-  <div id="debug" style="display: none;">a1</div>
+  <div id="debug">a1</div>
 
   <script>
     let mode = 'calculator';
-    let file = 0; // a=0, b=1, ..., h=7
-    let rank = 1; // 1–8
+    let file = 0; // a=0 ... h=7
+    let rank = 1; // 1-8
     let tapHistory = [];
     let lastTapTime = 0;
 
-    const display = document.getElementById('display');
-    const calculatorEl = document.getElementById('calculator');
-    const chessLayer = document.getElementById('chessLayer');
+    const calcEl = document.getElementById('calculator');
+    const chessEl = document.getElementById('chessLayer');
     const debugEl = document.getElementById('debug');
-
-    const updateDebug = () => {
-      const square = String.fromCharCode(97 + file) + rank;
-      debugEl.textContent = square;
-    };
 
     const switchToChess = () => {
       mode = 'chess';
-      file = 0;
-      rank = 1;
-      calculatorEl.style.display = 'none';
-      chessLayer.style.opacity = '1';
-      chessLayer.style.pointerEvents = 'auto';
-      debugEl.style.display = 'block'; // SHOW DEBUG
+      file = 0; rank = 1;
+      calcEl.style.display = 'none';
+      chessEl.style.opacity = '1';
+      chessEl.style.pointerEvents = 'auto';
+      debugEl.style.display = 'block';
       updateDebug();
     };
 
     const switchToCalculator = () => {
       mode = 'calculator';
-      calculatorEl.style.display = 'flex';
-      chessLayer.style.opacity = '0';
-      chessLayer.style.pointerEvents = 'none';
-      debugEl.style.display = 'none'; // HIDE DEBUG
+      calcEl.style.display = 'flex';
+      chessEl.style.opacity = '0';
+      chessEl.style.pointerEvents = 'none';
+      debugEl.style.display = 'none';
       tapHistory = [];
     };
 
-    // === CALCULATOR LOGIC (same as before) ===
-    let currentInput = '0';
-    let operatorPressed = false;
-
-    const updateDisplay = () => {
-      let text = currentInput;
-      if (text.length > 12) text = parseFloat(text).toExponential(5);
-      display.textContent = text;
+    const updateDebug = () => {
+      debugEl.textContent = String.fromCharCode(97 + file) + rank;
     };
 
-    const handleButton = (value) => {
-      if (value === 'C') { clearAll(); return; }
-      if (value === '±') {
-        currentInput = currentInput !== '0' ? (currentInput.startsWith('-') ? currentInput.slice(1) : '-' + currentInput) : '0';
-        updateDisplay(); return;
-      }
-      if (value === '%') {
-        const num = parseFloat(currentInput);
-        if (!isNaN(num)) currentInput = (num / 100).toString();
-        updateDisplay(); return;
-      }
-      if (value === '=') {
-        if (currentInput === '999') {
-          switchToChess();
-          return;
-        }
+    // === Calculator logic (simplified but working) ===
+    let currentInput = '0';
+    let operatorPressed = false;
+    const display = document.getElementById('display');
+
+    const updateDisplay = () => {
+      display.textContent = currentInput.length > 12 ? parseFloat(currentInput).toExponential(5) : currentInput;
+    };
+
+    const handleButton = (v) => {
+      if (v === 'C') { currentInput = '0'; operatorPressed = false; }
+      else if (v === '±') { if (currentInput !== '0') currentInput = currentInput.startsWith('-') ? currentInput.slice(1) : '-' + currentInput; }
+      else if (v === '%') { const n = parseFloat(currentInput); if (!isNaN(n)) currentInput = (n / 100).toString(); }
+      else if (v === '=') {
+        if (currentInput === '999') { switchToChess(); return; }
         try {
-          const result = Function('"use strict"; return (' + currentInput + ')')();
-          currentInput = isNaN(result) || !isFinite(result) ? 'Error' : parseFloat(result.toFixed(10)).toString();
-        } catch (e) {
-          currentInput = 'Error';
-        }
+          let r = Function('"use strict"; return (' + currentInput + ')')();
+          currentInput = isNaN(r) || !isFinite(r) ? 'Error' : parseFloat(r.toFixed(10)).toString();
+        } catch (e) { currentInput = 'Error'; }
         operatorPressed = true;
-        updateDisplay(); return;
       }
-      if (['+', '-', '*', '/'].includes(value)) {
+      else if (['+', '-', '*', '/'].includes(v)) {
         if (operatorPressed && ['+', '-', '*', '/'].includes(currentInput.slice(-1))) {
-          currentInput = currentInput.slice(0, -1) + value;
+          currentInput = currentInput.slice(0, -1) + v;
         } else {
-          currentInput += value;
+          currentInput += v;
         }
         operatorPressed = true;
-        updateDisplay(); return;
       }
-      if (operatorPressed || currentInput === '0') {
-        currentInput = value === '.' ? '0.' : value;
-        operatorPressed = false;
-      } else {
-        if (value === '.') {
-          if (!currentInput.includes('.')) currentInput += '.';
+      else {
+        if (operatorPressed || currentInput === '0') {
+          currentInput = v === '.' ? '0.' : v;
+          operatorPressed = false;
         } else {
-          currentInput += value;
+          if (v === '.') {
+            if (!currentInput.includes('.')) currentInput += '.';
+          } else {
+            currentInput += v;
+          }
         }
       }
       updateDisplay();
     };
 
-    const clearAll = () => { currentInput = '0'; operatorPressed = false; updateDisplay(); };
-
     document.querySelectorAll('.btn').forEach(btn => {
       btn.addEventListener('click', () => handleButton(btn.dataset.value));
     });
 
-    // === CHESS TOUCH HANDLING ===
-    chessLayer.addEventListener('click', (e) => {
+    // ✅ CHESS TOUCH HANDLER — now attached to full-screen layer
+    chessEl.addEventListener('click', (e) => {
       if (mode !== 'chess') return;
 
-      const y = e.clientY;
-      const isUpper = y < window.innerHeight / 2;
+      const isUpper = e.clientY < window.innerHeight / 2;
 
       // Panic pattern
       const now = Date.now();
