@@ -149,7 +149,6 @@
       if (navigator.vibrate) navigator.vibrate(pattern);
     };
 
-    // Fast speech for coords
     const speak = (text) => {
       if (!isSpeechInitialized) {
         speechSynthesis.cancel();
@@ -164,7 +163,6 @@
       speechSynthesis.speak(utterance);
     };
 
-    // Clear speech for moves
     const speakMove = (text) => {
       if (!isSpeechInitialized) {
         speechSynthesis.cancel();
@@ -172,7 +170,7 @@
       }
       speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.3; // ✅ Slower for clarity
+      utterance.rate = 1.3;
       utterance.volume = 0.9;
       utterance.lang = 'en-US';
       speechSynthesis.speak(utterance);
@@ -199,16 +197,20 @@
       display.textContent = currentInput.length > 12 ? parseFloat(currentInput).toExponential(5) : currentInput;
     };
 
-    // ✅ AUTO-LOAD LOCAL STOCKFISH
+    // ✅ SINGLE-FILE STOCKFISH (WORKS ON GITHUB PAGES)
     const initLocalEngine = () => {
       if (customEngine) return;
       try {
-        customEngine = new Worker('./stockfish.wasm.js');
-        customEngine.postMessage('uci');
-        customEngine.onerror = () => {
+        customEngine = new Worker('./stockfish.js');
+        customEngine.onerror = (err) => {
+          speak("Engine error");
+          vibrate([50, 50, 50]);
           customEngine = null;
         };
+        customEngine.postMessage('uci');
       } catch (err) {
+        speak("Engine failed");
+        vibrate([50, 50, 50]);
         customEngine = null;
       }
     };
@@ -229,7 +231,8 @@
 
       if (playerColor === 'black') {
         setTimeout(() => {
-          startBackgroundSearch(); // Black moves first
+          speak("Thinking");
+          startBackgroundSearch();
         }, 800);
       } else {
         speak("White to move");
@@ -251,13 +254,6 @@
     const startBackgroundSearch = () => {
       if (!customEngine || mode !== 'chess') return;
 
-      // Cancel previous search
-      if (searchAbortController) {
-        searchAbortController.abort();
-      }
-      searchAbortController = new AbortController();
-
-      // Listen for bestmove
       customEngine.onmessage = (e) => {
         const msg = e.data;
         if (typeof msg === 'string' && msg.startsWith('bestmove')) {
@@ -275,7 +271,7 @@
       customEngine.postMessage('go depth 12');
     };
 
-    // ===== FALLBACK AI MOVE =====
+    // ===== FALLBACK =====
     const getRandomMove = (chessInstance) => {
       const moves = chessInstance.moves({ verbose: true });
       if (moves.length === 0) return null;
@@ -295,7 +291,7 @@
       }
     };
 
-    // ===== TOUCH HANDLING — LIVE REPEAT =====
+    // ===== TOUCH HANDLING =====
     let lastUpperTap = 0;
     const DOUBLE_TAP_DELAY = 300;
 
@@ -320,12 +316,11 @@
       const now = Date.now();
       const zone = isUpper ? 'U' : 'L';
 
-      // ✅ Double-tap: speak LATEST best move
+      // ✅ Repeat: latest best move
       if (isUpper) {
         if (now - lastUpperTap < DOUBLE_TAP_DELAY) {
           if (speechTimeout) clearTimeout(speechTimeout);
           speechSynthesis.cancel();
-          
           if (latestBestMove) {
             speakMove(`Best move: ${latestBestMove.from} to ${latestBestMove.to}`);
           } else if (lastAIMove) {
@@ -338,7 +333,7 @@
         lastUpperTap = now;
       }
 
-      // Panic pattern
+      // Panic
       tapHistory.push({ zone, time: now });
       if (tapHistory.length > 4) tapHistory.shift();
       if (tapHistory.length === 4) {
@@ -378,17 +373,16 @@
       handleEnd(e.clientY);
     });
 
-    // ===== LONG PRESS WITH BACKGROUND SEARCH =====
+    // ===== LONG PRESS =====
     const handleLongPress = (isUpper) => {
       const coord = getCoord();
       if (!isUpper) {
-        // Set "from" and start background search
         fromSquare = coord;
         speak(`From ${coord}`);
         vibrate([50]);
         file = 0;
         rank = 1;
-        startBackgroundSearch(); // ✅ Start thinking now
+        startBackgroundSearch();
       } else {
         if (!fromSquare) {
           speak("No from");
@@ -403,7 +397,6 @@
           file = 0;
           rank = 1;
 
-          // ✅ Use latest best move if available
           if (latestBestMove) {
             const aiMove = game.move({
               from: latestBestMove.from,
@@ -419,7 +412,6 @@
             }
           }
 
-          // Fallback
           if (game.turn() === (playerColor === 'white' ? 'b' : 'w')) {
             speak("Thinking");
             setTimeout(fetchFallbackMove, 300);
