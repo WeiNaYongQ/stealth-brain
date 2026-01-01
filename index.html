@@ -10,17 +10,16 @@
       padding: 0;
       box-sizing: border-box;
       -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
       user-select: none;
     }
     body, html {
       height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #000;
       color: white;
       overflow: hidden;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }
-
-    /* === CALCULATOR === */
     #calculator {
       display: flex;
       flex-direction: column;
@@ -35,6 +34,9 @@
       display: flex;
       align-items: flex-end;
       justify-content: flex-end;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     #buttons {
       display: grid;
@@ -53,16 +55,23 @@
       justify-content: center;
       color: white;
       border: none;
+      cursor: pointer;
     }
-    .btn:active { background: #444; }
-    .btn.operator { background: #f1a33c; }
-    .btn.operator:active { background: #d99234; }
+    .btn:active {
+      background: #444;
+    }
+    .btn.operator {
+      background: #f1a33c;
+    }
+    .btn.operator:active {
+      background: #d99234;
+    }
     .btn.zero {
       grid-column: span 2;
       border-radius: 36px;
     }
 
-    /* ✅ CHESS LAYER */
+    /* ✅ INVISIBLE CHESS LAYER — 100% BLACK */
     #chessLayer {
       position: absolute;
       top: 0;
@@ -72,22 +81,6 @@
       background: #000;
       opacity: 0;
       pointer-events: none;
-    }
-
-    /* 🔴 DEBUG */
-    #debug {
-      position: absolute;
-      top: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: red;
-      color: white;
-      padding: 6px 12px;
-      border-radius: 6px;
-      font-size: 18px;
-      font-weight: bold;
-      z-index: 9999;
-      display: none;
     }
   </style>
 </head>
@@ -122,26 +115,71 @@
   </div>
 
   <div id="chessLayer"></div>
-  <div id="debug">a1</div>
 
   <script>
+    // ===== GLOBAL STATE =====
     let mode = 'calculator';
-    let file = 0;
-    let rank = 1;
-    let tapHistory = []; // stores { zone: 'U'/'L', time: timestamp }
+    let file = 0; // a=0 ... h=7
+    let rank = 1; // 1-8
+    let tapHistory = [];
+    let speechTimeout = null;
+    let isSpeechInitialized = false;
 
+    // Calculator state
+    let currentInput = '0';
+    let operatorPressed = false;
+
+    // DOM
     const calcEl = document.getElementById('calculator');
     const chessEl = document.getElementById('chessLayer');
-    const debugEl = document.getElementById('debug');
+    const display = document.getElementById('display');
+
+    // ===== SPEECH =====
+    const speak = (text) => {
+      // Initialize speech on first use (requires user gesture)
+      if (!isSpeechInitialized) {
+        // Force synthesis to initialize
+        speechSynthesis.cancel();
+        isSpeechInitialized = true;
+      }
+
+      // Cancel any pending speech
+      speechSynthesis.cancel();
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.9;    // telegraphic speed
+      utterance.volume = 0.8;  // slightly quiet
+      utterance.lang = 'en-US';
+
+      speechSynthesis.speak(utterance);
+    };
+
+    const debouncedSpeak = () => {
+      if (speechTimeout) clearTimeout(speechTimeout);
+      speechTimeout = setTimeout(() => {
+        const coord = String.fromCharCode(97 + file) + rank;
+        speak(coord);
+      }, 500); // only after 500ms pause
+    };
+
+    // ===== MODE SWITCHING =====
+    const resetCalculator = () => {
+      currentInput = '0';
+      operatorPressed = false;
+      updateDisplay();
+    };
+
+    const updateDisplay = () => {
+      display.textContent = currentInput.length > 12 ? parseFloat(currentInput).toExponential(5) : currentInput;
+    };
 
     const switchToChess = () => {
       mode = 'chess';
-      file = 0; rank = 1;
+      file = 0;
+      rank = 1;
       calcEl.style.display = 'none';
       chessEl.style.opacity = '1';
       chessEl.style.pointerEvents = 'auto';
-      debugEl.style.display = 'block';
-      updateDebug();
     };
 
     const switchToCalculator = () => {
@@ -150,51 +188,56 @@
       chessEl.style.opacity = '0';
       chessEl.style.pointerEvents = 'none';
       tapHistory = [];
-      debugEl.style.display = 'none';
+      if (speechTimeout) clearTimeout(speechTimeout);
+      speechSynthesis.cancel(); // stop any speech
+      resetCalculator();
     };
 
-    const updateDebug = () => {
-      debugEl.textContent = String.fromCharCode(97 + file) + rank;
-    };
-
-    // === Calculator ===
-    let currentInput = '0';
-    let operatorPressed = false;
-    const display = document.getElementById('display');
-    const updateDisplay = () => {
-      display.textContent = currentInput.length > 12 ? parseFloat(currentInput).toExponential(5) : currentInput;
-    };
-
+    // ===== CALCULATOR LOGIC =====
     const handleButton = (v) => {
-      if (v === 'C') { currentInput = '0'; operatorPressed = false; }
-      else if (v === '±') { if (currentInput !== '0') currentInput = currentInput.startsWith('-') ? currentInput.slice(1) : '-' + currentInput; }
-      else if (v === '%') { const n = parseFloat(currentInput); if (!isNaN(n)) currentInput = (n / 100).toString(); }
-      else if (v === '=') {
-        if (currentInput === '999') { switchToChess(); return; }
+      if (v === 'C') { resetCalculator(); return; }
+      if (v === '±') {
+        if (currentInput !== '0') {
+          currentInput = currentInput.startsWith('-') ? currentInput.slice(1) : '-' + currentInput;
+        }
+        updateDisplay(); return;
+      }
+      if (v === '%') {
+        const n = parseFloat(currentInput);
+        if (!isNaN(n)) currentInput = (n / 100).toString();
+        updateDisplay(); return;
+      }
+      if (v === '=') {
+        if (currentInput === '999') {
+          switchToChess();
+          return;
+        }
         try {
           let r = Function('"use strict"; return (' + currentInput + ')')();
           currentInput = isNaN(r) || !isFinite(r) ? 'Error' : parseFloat(r.toFixed(10)).toString();
-        } catch (e) { currentInput = 'Error'; }
+        } catch (e) {
+          currentInput = 'Error';
+        }
         operatorPressed = true;
+        updateDisplay(); return;
       }
-      else if (['+', '-', '*', '/'].includes(v)) {
+      if (['+', '-', '*', '/'].includes(v)) {
         if (operatorPressed && ['+', '-', '*', '/'].includes(currentInput.slice(-1))) {
           currentInput = currentInput.slice(0, -1) + v;
         } else {
           currentInput += v;
         }
         operatorPressed = true;
+        updateDisplay(); return;
       }
-      else {
-        if (operatorPressed || currentInput === '0') {
-          currentInput = v === '.' ? '0.' : v;
-          operatorPressed = false;
+      if (operatorPressed || currentInput === '0') {
+        currentInput = v === '.' ? '0.' : v;
+        operatorPressed = false;
+      } else {
+        if (v === '.') {
+          if (!currentInput.includes('.')) currentInput += '.';
         } else {
-          if (v === '.') {
-            if (!currentInput.includes('.')) currentInput += '.';
-          } else {
-            currentInput += v;
-          }
+          currentInput += v;
         }
       }
       updateDisplay();
@@ -204,7 +247,7 @@
       btn.addEventListener('click', () => handleButton(btn.dataset.value));
     });
 
-    // ✅ SPEED-GATED PANIC PATTERN
+    // ===== CHESS TOUCH HANDLING =====
     chessEl.addEventListener('click', (e) => {
       if (mode !== 'chess') return;
 
@@ -212,33 +255,28 @@
       const isUpper = e.clientY < window.innerHeight / 2;
       const zone = isUpper ? 'U' : 'L';
 
-      // Record tap
+      // Speed-gated panic pattern
       tapHistory.push({ zone, time: now });
-
-      // Keep only last 4 taps
       if (tapHistory.length > 4) tapHistory.shift();
 
-      // Only check if we have 4 taps
       if (tapHistory.length === 4) {
         const zones = tapHistory.map(t => t.zone).join('');
-        const startTime = tapHistory[0].time;
-        const endTime = tapHistory[3].time;
-        const duration = endTime - startTime;
-
-        // Must be alternating AND within 1200ms
+        const duration = tapHistory[3].time - tapHistory[0].time;
         if ((zones === 'ULUL' || zones === 'LULU') && duration <= 1200) {
           switchToCalculator();
           return;
         }
       }
 
-      // Normal coord cycling
+      // Cycle coordinates
       if (isUpper) {
         rank = rank % 8 + 1;
       } else {
         file = (file + 1) % 8;
       }
-      updateDebug();
+
+      // Trigger debounced speech
+      debouncedSpeak();
     });
 
     updateDisplay();
