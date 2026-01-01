@@ -170,7 +170,7 @@
       if (speechTimeout) clearTimeout(speechTimeout);
       speechTimeout = setTimeout(() => {
         const coord = String.fromCharCode(97 + file) + rank;
-        speak(coord); // ✅ Just "e2", not "Coord e2"
+        speak(coord);
       }, 500);
     };
 
@@ -405,77 +405,95 @@
       btn.addEventListener('click', () => handleButton(btn.dataset.value));
     });
 
-    // ===== TOUCH =====
-    let startY = 0;
-    const handleStart = (clientY) => {
-      if (mode !== 'chess') return;
-      startY = clientY;
-      isLongPressing = false;
-      longPressTimer = setTimeout(() => {
-        isLongPressing = true;
-        const isUpper = startY < window.innerHeight / 2;
-        handleLongPress(isUpper);
-      }, LONG_PRESS_MS);
-    };
+    // ===== MULTI-TOUCH HANDLING (HOLD BOTH ZONES) =====
+    let activeTouches = new Map(); // id → { y, startTime }
+    let deepBriefingTimer = null;
 
-    const handleEnd = (clientY) => {
-      if (mode !== 'chess') return;
-      clearTimeout(longPressTimer);
-      if (isLongPressing) return;
-
-      const isUpper = clientY < window.innerHeight / 2;
-      const now = Date.now();
-      const zone = isUpper ? 'U' : 'L';
-
-      tapHistory.push({ zone, time: now });
-      if (tapHistory.length > 4) tapHistory.shift();
-      if (tapHistory.length === 4) {
-        const zones = tapHistory.map(t => t.zone).join('');
-        const duration = tapHistory[3].time - tapHistory[0].time;
-        if ((zones === 'ULUL' || zones === 'LULU') && duration <= 1200) {
-          switchToCalculator();
-          return;
+    const checkDeepBriefing = () => {
+      if (activeTouches.size < 2) return;
+      let hasUpper = false;
+      let hasLower = false;
+      for (let touch of activeTouches.values()) {
+        if (touch.y < window.innerHeight / 2) hasUpper = true;
+        else hasLower = true;
+      }
+      if (hasUpper && hasLower) {
+        if (!deepBriefingTimer) {
+          deepBriefingTimer = setTimeout(() => {
+            speak("Deep briefing ready");
+            vibrate([50, 100, 50]);
+            deepBriefingTimer = null;
+          }, 1000);
+        }
+      } else {
+        if (deepBriefingTimer) {
+          clearTimeout(deepBriefingTimer);
+          deepBriefingTimer = null;
         }
       }
+    };
 
-      if (isUpper) rank = rank % 8 + 1;
-      else file = (file + 1) % 8;
-
-      debouncedSpeak();
+    const handleTouchEnd = (e) => {
+      for (let touch of e.changedTouches) {
+        activeTouches.delete(touch.identifier);
+      }
+      if (deepBriefingTimer) {
+        clearTimeout(deepBriefingTimer);
+        deepBriefingTimer = null;
+      }
+      if (activeTouches.size === 1 && mode === 'chess') {
+        const touch = activeTouches.values().next().value;
+        const isUpper = touch.y < window.innerHeight / 2;
+        longPressTimer = setTimeout(() => {
+          isLongPressing = true;
+          handleLongPress(isUpper);
+        }, LONG_PRESS_MS);
+      }
     };
 
     chessEl.addEventListener('touchstart', (e) => {
       e.preventDefault();
-      handleStart(e.touches[0].clientY);
+      for (let touch of e.changedTouches) {
+        activeTouches.set(touch.identifier, {
+          y: touch.clientY,
+          startTime: Date.now()
+        });
+      }
+      checkDeepBriefing();
     });
 
     chessEl.addEventListener('touchend', (e) => {
       e.preventDefault();
-      handleEnd(e.changedTouches[0].clientY);
+      handleTouchEnd(e);
     });
 
-    chessEl.addEventListener('touchcancel', () => {
-      clearTimeout(longPressTimer);
+    chessEl.addEventListener('touchcancel', (e) => {
+      handleTouchEnd(e);
     });
 
+    // Mouse fallback (desktop)
     chessEl.addEventListener('mousedown', (e) => {
-      handleStart(e.clientY);
+      activeTouches.set('mouse', { y: e.clientY, startTime: Date.now() });
+      checkDeepBriefing();
     });
 
-    chessEl.addEventListener('mouseup', (e) => {
-      handleEnd(e.clientY);
+    chessEl.addEventListener('mouseup', () => {
+      activeTouches.clear();
+      if (deepBriefingTimer) {
+        clearTimeout(deepBriefingTimer);
+        deepBriefingTimer = null;
+      }
     });
 
     // ===== LONG PRESS WITH COORD RESET =====
     const handleLongPress = (isUpper) => {
       const coord = getCoord();
       if (!isUpper) {
-        // Set "from" and reset to a1 for easier "to" input
         fromSquare = coord;
         speak(`From ${coord}`);
         vibrate([50]);
-        file = 0; // reset to 'a'
-        rank = 1; // reset to '1'
+        file = 0;
+        rank = 1;
       } else {
         if (!fromSquare) {
           speak("No from");
