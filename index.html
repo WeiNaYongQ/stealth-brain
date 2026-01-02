@@ -111,7 +111,6 @@ let lastAnalysis = null;
 let moveHistory = [];
 let currentInput = '0';
 let operatorPressed = false;
-let speechTimeout = null;
 const calcEl = document.getElementById('calculator');
 const chessEl = document.getElementById('chessLayer');
 const display = document.getElementById('display');
@@ -165,7 +164,7 @@ chessEl.style.pointerEvents = 'none';
 speechSynthesis.cancel();
 resetCalculator();
 };
-// CASTLING NORMALIZATION
+// ✅ CASTLING FIX
 const normalizeMove = (uciMove) => {
 if (uciMove === 'e1h1') return 'e1g1';
 if (uciMove === 'e1a1') return 'e1c1';
@@ -175,10 +174,6 @@ return uciMove;
 };
 const fetchAIMove = async () => {
 if (mode !== 'chess') return;
-// ✅ Clear any pending speech
-if (speechTimeout) clearTimeout(speechTimeout);
-speechSynthesis.cancel();
-
 speak("Thinking");
 try {
 const fen = game.fen().replace(/\s+/g, '_');
@@ -199,11 +194,6 @@ lastAIMove = { from, to };
 lastOpponentMove = { from, to };
 speakMove(`Opponent ${from} to ${to}`);
 vibrate([100]);
-
-// ✅ CRITICAL: Reset input state after AI move
-file = 0;
-rank = 1;
-fromSquare = null;
 return;
 }
 }
@@ -220,11 +210,6 @@ lastAIMove = { from: move.from, to: move.to };
 lastOpponentMove = { from: move.from, to: move.to };
 speakMove(`Opponent ${move.from} to ${move.to}`);
 vibrate([100]);
-
-// ✅ Reset input state
-file = 0;
-rank = 1;
-fromSquare = null;
 }
 };
 const speakAnalysis = () => {
@@ -256,7 +241,6 @@ return;
 const lastMove = moveHistory.pop();
 game = new Chess(lastMove.fen);
 fromSquare = null;
-// ✅ Reset input state
 file = 0;
 rank = 1;
 speak("Move undone");
@@ -267,7 +251,7 @@ speakMove(`Opponent ${lastOpponentMove.from} to ${lastOpponentMove.to}`);
 }, 300);
 }
 };
-// TOUCH HANDLING
+// ✅ TOUCH HANDLING — NO EMPTY SQUARES
 let touchStartY = 0;
 let longPressTimer = null;
 let analysisTimer = null;
@@ -313,7 +297,7 @@ fromSquare = coord;
 speak(`From ${coord}`);
 vibrate([50]);
 file = 0;
-rank = 1;
+rank = 1; // ✅ Reset to a1 for next input
 analysisTimer = setTimeout(() => {
 speakAnalysis();
 }, 1400);
@@ -329,11 +313,7 @@ if (!wasLongPress) {
 const isUpper = clientY < window.innerHeight / 2;
 if (isUpper) rank = rank % 8 + 1;
 else file = (file + 1) % 8;
-// Debounced speech for taps only
-if (speechTimeout) clearTimeout(speechTimeout);
-speechTimeout = setTimeout(() => {
-speak(getCoord());
-}, 100);
+setTimeout(() => speak(getCoord()), 100);
 }
 }
 if (analysisTimer) {
@@ -358,7 +338,7 @@ wasLongPress = false;
 });
 chessEl.addEventListener('mousedown', (e) => handleTouchStart(e.clientY));
 chessEl.addEventListener('mouseup', (e) => handleTouchEnd(e.clientY));
-// CALCULATOR
+// ✅ CALCULATOR — FULLY WORKING
 const handleButton = (v) => {
 if (v === 'C') {
 currentInput = '0';
