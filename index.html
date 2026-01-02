@@ -164,7 +164,7 @@ chessEl.style.pointerEvents = 'none';
 speechSynthesis.cancel();
 resetCalculator();
 };
-// ✅ CASTLING FIX
+// ✅ CASTLING NORMALIZATION
 const normalizeMove = (uciMove) => {
 if (uciMove === 'e1h1') return 'e1g1';
 if (uciMove === 'e1a1') return 'e1c1';
@@ -251,7 +251,7 @@ speakMove(`Opponent ${lastOpponentMove.from} to ${lastOpponentMove.to}`);
 }, 300);
 }
 };
-// ✅ TOUCH HANDLING — NO EMPTY SQUARES
+// ✅ TOUCH HANDLING — UNDO ON UPPER
 let touchStartY = 0;
 let longPressTimer = null;
 let analysisTimer = null;
@@ -266,6 +266,7 @@ longPressTimer = setTimeout(() => {
 wasLongPress = true;
 const isUpper = touchStartY < window.innerHeight / 2;
 if (isUpper) {
+// ✅ UPPER LONG-PRESS = UNDO (if no "from")
 if (fromSquare) {
 const coord = getCoord();
 const move = game.move({ from: fromSquare, to: coord, promotion: 'q' });
@@ -289,15 +290,17 @@ speak("Invalid");
 vibrate([50, 50, 50]);
 }
 } else {
+// ✅ UNDO WHEN NO "FROM" SET
 undoLastMove();
 }
 } else {
+// LOWER: set "from" + analysis
 const coord = getCoord();
 fromSquare = coord;
 speak(`From ${coord}`);
 vibrate([50]);
 file = 0;
-rank = 1; // ✅ Reset to a1 for next input
+rank = 1;
 analysisTimer = setTimeout(() => {
 speakAnalysis();
 }, 1400);
