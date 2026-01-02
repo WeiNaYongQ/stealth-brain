@@ -271,99 +271,99 @@
     };
     
     // ✅ CORRECT TOUCH HANDLING — NO MORE ACCIDENTAL TRIGGERS
-    let touchStartY = 0;
-    let touchStartTime = 0;
-    let longPressTimer = null;
-    let analysisTimer = null;
+let touchStartY = 0;
+let longPressTimer = null;
+let analysisTimer = null;
+let wasLongPress = false; // ✅ NEW FLAG
+
+const handleTouchStart = (clientY) => {
+  if (mode !== 'chess') return;
+  touchStartY = clientY;
+  wasLongPress = false; // reset
+  
+  if (longPressTimer) clearTimeout(longPressTimer);
+  if (analysisTimer) clearTimeout(analysisTimer);
+  
+  longPressTimer = setTimeout(() => {
+    wasLongPress = true; // ✅ Mark as long-press
     
-    const handleTouchStart = (clientY) => {
-      if (mode !== 'chess') return;
-      touchStartY = clientY;
-      touchStartTime = Date.now();
-      
-      // Clear timers
-      if (longPressTimer) clearTimeout(longPressTimer);
-      if (analysisTimer) clearTimeout(analysisTimer);
-      
-      // Start long-press detection
-      longPressTimer = setTimeout(() => {
-        const isUpper = touchStartY < window.innerHeight / 2;
-        
-        if (isUpper) {
-          if (fromSquare) {
-            // Confirm move
-            const coord = getCoord();
-            const move = game.move({ from: fromSquare, to: coord, promotion: 'q' });
-            if (move) {
-              moveHistory.push({
-                from: fromSquare,
-                to: coord,
-                fen: game.fen()
-              });
-              lastOpponentMove = null;
-              speak(`To ${coord}`);
-              vibrate([200]);
-              fromSquare = null;
-              file = 0; rank = 1;
-              if (game.turn() === (playerColor === 'white' ? 'b' : 'w')) {
-                setTimeout(fetchAIMove, 300);
-              }
-            } else {
-              speak("Invalid");
-              vibrate([50, 50, 50]);
-            }
-          } else {
-            // Undo
-            undoLastMove();
+    const isUpper = touchStartY < window.innerHeight / 2;
+    if (isUpper) {
+      if (fromSquare) {
+        const coord = getCoord();
+        const move = game.move({ from: fromSquare, to: coord, promotion: 'q' });
+        if (move) {
+          moveHistory.push({ from: fromSquare, to: coord, fen: game.fen() });
+          lastOpponentMove = null;
+          speak(`To ${coord}`);
+          vibrate([200]);
+          fromSquare = null;
+          file = 0; rank = 1;
+          if (game.turn() === (playerColor === 'white' ? 'b' : 'w')) {
+            setTimeout(fetchAIMove, 300);
           }
         } else {
-          // Set "from"
-          const coord = getCoord();
-          fromSquare = coord;
-          speak(`From ${coord}`);
-          vibrate([50]);
-          file = 0; rank = 1;
-          
-          // Start analysis after additional 1400ms (2s total)
-          analysisTimer = setTimeout(() => {
-            speakAnalysis();
-          }, 1400);
+          speak("Invalid");
+          vibrate([50, 50, 50]);
         }
-      }, 600);
-    };
-    
-    const handleTouchEnd = (clientY) => {
-      if (mode !== 'chess') return;
-      
-      // Cancel long-press if released early
-      if (longPressTimer) {
-        clearTimeout(longPressTimer);
-        longPressTimer = null;
-        
-        // It was a TAP → speak coordinate
-        const isUpper = clientY < window.innerHeight / 2;
-        if (isUpper) rank = rank % 8 + 1;
-        else file = (file + 1) % 8;
-        
-        setTimeout(() => speak(getCoord()), 100);
+      } else {
+        undoLastMove();
       }
+    } else {
+      const coord = getCoord();
+      fromSquare = coord;
+      speak(`From ${coord}`);
+      vibrate([50]);
+      file = 0; rank = 1;
       
-      // Cancel analysis timer
-      if (analysisTimer) {
-        clearTimeout(analysisTimer);
-        analysisTimer = null;
-      }
-    };
+      analysisTimer = setTimeout(() => {
+        speakAnalysis();
+      }, 1400);
+    }
+  }, 600);
+};
+
+const handleTouchEnd = (clientY) => {
+  if (mode !== 'chess') return;
+  
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
     
-    chessEl.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      handleTouchStart(e.touches[0].clientY);
-    });
-    
-    chessEl.addEventListener('touchend', (e) => {
-      e.preventDefault();
-      handleTouchEnd(e.changedTouches[0].clientY);
-    });
+    // ✅ ONLY speak coordinate if it was NOT a long-press
+    if (!wasLongPress) {
+      const isUpper = clientY < window.innerHeight / 2;
+      if (isUpper) rank = rank % 8 + 1;
+      else file = (file + 1) % 8;
+      
+      setTimeout(() => speak(getCoord()), 100);
+    }
+  }
+  
+  if (analysisTimer) {
+    clearTimeout(analysisTimer);
+    analysisTimer = null;
+  }
+};
+
+// Event listeners (unchanged)
+chessEl.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  handleTouchStart(e.touches[0].clientY);
+});
+
+chessEl.addEventListener('touchend', (e) => {
+  e.preventDefault();
+  handleTouchEnd(e.changedTouches[0].clientY);
+});
+
+chessEl.addEventListener('touchcancel', () => {
+  if (longPressTimer) clearTimeout(longPressTimer);
+  if (analysisTimer) clearTimeout(analysisTimer);
+  longPressTimer = null;
+  analysisTimer = null;
+  wasLongPress = false;
+});
     
     chessEl.addEventListener('touchcancel', () => {
       if (longPressTimer) clearTimeout(longPressTimer);
