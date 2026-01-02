@@ -173,57 +173,50 @@
     };
     
     // ✅ CLOUD CHESS ENGINE (chess-api.com)
-    const fetchAIMove = async () => {
-      if (mode !== 'chess') return;
-      
-      speak("Thinking");
-      
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
+const fetchAIMove = async () => {
+  if (mode !== 'chess') return;
+  
+  speak("Thinking");
+  
+  try {
+    const fen = game.fen().replace(/\s+/g, '_'); // Lichess uses underscores
+    const url = `https://lichess.org/api/cloud-eval?fen=${fen}&multiPv=1`;
+    
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.pvs && data.pvs[0] && data.pvs[0].moves) {
+        const bestLine = data.pvs[0].moves;
+        const firstMove = bestLine.split(' ')[0]; // e.g., "e7e5"
         
-        const res = await fetch('https://chess-api.com/v1', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            fen: game.fen(),
-            depth: 14,
-            maxThinkingTime: 100
-          }),
-          signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        
-        if (res.ok) {
-          const data = await res.json();
-          if (data.move && data.move.length >= 4) {
-            const from = data.move.slice(0, 2);
-            const to = data.move.slice(2, 4);
-            const move = game.move({ from, to, promotion: 'q' });
-            
-            if (move) {
-              lastAIMove = { from, to };
-              speakMove(`Opponent ${from} to ${to}`);
-              vibrate([100]);
-              return;
-            }
+        if (firstMove && firstMove.length === 4) {
+          const from = firstMove.slice(0, 2);
+          const to = firstMove.slice(2, 4);
+          const move = game.move({ from, to, promotion: 'q' });
+          
+          if (move) {
+            lastAIMove = { from, to };
+            speakMove(`Opponent ${from} to ${to}`);
+            vibrate([100]);
+            return;
           }
         }
-      } catch (error) {
-        console.error('Cloud move failed:', error);
       }
-      
-      // Fallback (should rarely happen)
-      const moves = game.moves({ verbose: true });
-      if (moves.length > 0) {
-        const move = moves[Math.floor(Math.random() * moves.length)];
-        game.move(move);
-        lastAIMove = { from: move.from, to: move.to };
-        speakMove(`Opponent ${move.from} to ${move.to}`);
-        vibrate([100]);
-      }
-    };
+    }
+  } catch (error) {
+    console.error('Lichess move failed:', error);
+  }
+  
+  // Fallback
+  const moves = game.moves({ verbose: true });
+  if (moves.length > 0) {
+    const move = moves[Math.floor(Math.random() * moves.length)];
+    game.move(move);
+    lastAIMove = { from: move.from, to: move.to };
+    speakMove(`Opponent ${move.from} to ${move.to}`);
+    vibrate([100]);
+  }
+};
     
     // ... (rest of calculator and touch logic remains the same)
     // I've omitted it for brevity, but keep your existing touch handling
