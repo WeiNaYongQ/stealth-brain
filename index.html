@@ -136,35 +136,43 @@ const updateDisplay = () => {
 display.textContent = currentInput.length > 12 ?
 parseFloat(currentInput).toExponential(5) : currentInput;
 };
-// ✅ STOCKFISH INIT
+// ✅ FIXED STOCKFISH — WORKS ON MOBILE
 const initStockfish = () => {
-if (engine) return;
-engine = new Worker('https://cdn.jsdelivr.net/npm/stockfish@11/src/stockfish.js');
+if (engine || engineReady) return;
+speak("Loading engine");
+engine = new Worker('https://cdn.jsdelivr.net/npm/stockfish@11.0.0/src/stockfish.js');
 engine.onmessage = (event) => {
 if (event.data.includes('readyok')) {
 engineReady = true;
+speak("Engine ready");
 }
 };
 engine.postMessage('uci');
 engine.postMessage('isready');
 };
+// ✅ SAFE MOVE FETCH
 const getBestMove = (fen) => {
 return new Promise((resolve) => {
+let responded = false;
+const timeout = setTimeout(() => {
+if (!responded) {
+responded = true;
+resolve(null);
+}
+}, 5000); // 5s timeout
 const listener = (e) => {
 if (e.data.includes('bestmove')) {
-engine.removeEventListener('message', listener);
+clearTimeout(timeout);
+if (!responded) {
+responded = true;
 const parts = e.data.split(' ');
-const move = parts[1];
-if (move === '(none)' || !move) {
-resolve(null);
-} else {
-resolve(move);
+resolve(parts[1] && parts[1] !== '(none)' ? parts[1] : null);
 }
 }
 };
 engine.addEventListener('message', listener);
 engine.postMessage(`position fen ${fen}`);
-engine.postMessage('go depth 18'); // Strong but fast
+engine.postMessage('go depth 15');
 });
 };
 const switchToChess = (color) => {
@@ -181,7 +189,7 @@ chessEl.style.opacity = '1';
 chessEl.style.pointerEvents = 'auto';
 initStockfish();
 if (playerColor === 'black') {
-setTimeout(fetchAIMove, 500);
+setTimeout(fetchAIMove, 2000); // Wait for engine
 } else {
 speak("White to move");
 }
@@ -194,31 +202,44 @@ chessEl.style.pointerEvents = 'none';
 speechSynthesis.cancel();
 resetCalculator();
 };
-// ✅ REAL STOCKFISH MOVE
+// ✅ ROBUST AI MOVE
 const fetchAIMove = async () => {
 if (mode !== 'chess') return;
+if (!engineReady) {
+speak("Waiting for engine");
+await new Promise(r => setTimeout(r, 2000));
+if (!engineReady) {
+speak("Using fallback");
+const moves = game.moves({ verbose: true });
+if (moves.length > 0) {
+const move = moves[0];
+game.move(move);
+lastOpponentMove = { from: move.from, to: move.to };
+speakMove(`Opponent ${move.from} to ${move.to}`);
+vibrate([100]);
+}
+return;
+}
+}
 speak("Thinking");
 let bestMove = null;
 try {
-if (!engineReady) {
-// Wait a bit
-await new Promise(r => setTimeout(r, 1000));
-}
 bestMove = await getBestMove(game.fen());
 } catch (e) {
 console.error('Stockfish error:', e);
 }
 if (!bestMove) {
-// Fallback to first legal move
+speak("Using random move");
 const moves = game.moves({ verbose: true });
 if (moves.length > 0) {
-bestMove = moves[0].from + moves[0].to;
-} else {
-speak("Game over");
+const move = moves[0];
+game.move(move);
+lastOpponentMove = { from: move.from, to: move.to };
+speakMove(`Opponent ${move.from} to ${move.to}`);
+vibrate([100]);
+}
 return;
 }
-}
-// Apply move
 const from = bestMove.slice(0, 2);
 const to = bestMove.slice(2, 4);
 const move = game.move({ from, to, promotion: 'q' });
@@ -227,8 +248,7 @@ lastOpponentMove = { from, to };
 speakMove(`Opponent ${from} to ${to}`);
 vibrate([100]);
 } else {
-// Should not happen with Stockfish
-speak("Engine error");
+speak("Move rejected");
 }
 };
 const undoLastMove = () => {
@@ -250,7 +270,7 @@ speakMove(`Opponent ${lastOpponentMove.from} to ${lastOpponentMove.to}`);
 }, 300);
 }
 };
-// TOUCH HANDLING — IDENTICAL TO BEFORE
+// TOUCH HANDLING — SAME AS BEFORE
 let touchStartY = 0;
 let longPressTimer = null;
 let analysisTimer = null;
@@ -383,7 +403,7 @@ wasLongPress = false;
 });
 chessEl.addEventListener('mousedown', (e) => handleTouchStart(e.clientY));
 chessEl.addEventListener('mouseup', (e) => handleTouchEnd(e.clientY));
-// ✅ CALCULATOR
+// CALCULATOR
 const handleButton = (v) => {
 if (v === 'C') {
 currentInput = '0';
