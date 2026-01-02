@@ -191,7 +191,7 @@ const to = norm.slice(2, 4);
 const move = game.move({ from, to, promotion: 'q' });
 if (move) {
 lastAIMove = { from, to };
-lastOpponentMove = { from, to }; // ✅ Save for replay
+lastOpponentMove = { from, to };
 speakMove(`Opponent ${from} to ${to}`);
 vibrate([100]);
 return;
@@ -215,7 +215,6 @@ vibrate([100]);
 const speakAnalysis = () => {
 if (!lastAnalysis) {
 speak("No analysis available");
-// Still replay opponent if exists
 if (lastOpponentMove) {
 setTimeout(() => {
 speakMove(`Opponent ${lastOpponentMove.from} to ${lastOpponentMove.to}`);
@@ -237,7 +236,6 @@ const bestMove = normalizeMove(bestLine.split(' ')[0]);
 const from = bestMove?.slice(0, 2) || 'e2';
 const to = bestMove?.slice(2, 4) || 'e4';
 speakMove(`${opening}. Position is ${evalText}. Best move: ${from} to ${to}.`);
-// ✅ ADD OPPONENT REPLAY AT END
 if (lastOpponentMove) {
 setTimeout(() => {
 speakMove(`Opponent ${lastOpponentMove.from} to ${lastOpponentMove.to}`);
@@ -263,7 +261,7 @@ speakMove(`Opponent ${lastOpponentMove.from} to ${lastOpponentMove.to}`);
 }, 300);
 }
 };
-// TOUCH HANDLING — FINAL
+// TOUCH HANDLING
 let touchStartY = 0;
 let longPressTimer = null;
 let analysisTimer = null;
@@ -278,17 +276,14 @@ longPressTimer = setTimeout(() => {
 wasLongPress = true;
 const isUpper = touchStartY < window.innerHeight / 2;
 if (isUpper) {
-// ✅ UPPER = UNDO ONLY
 undoLastMove();
 } else {
-// ✅ LOWER = SET "FROM" → THEN ANALYSIS
 const coord = getCoord();
 fromSquare = coord;
 speak(`From ${coord}`);
 vibrate([50]);
 file = 0;
 rank = 1;
-// Start analysis after 1400ms (total 2s)
 analysisTimer = setTimeout(() => {
 speakAnalysis();
 }, 1400);
@@ -327,10 +322,9 @@ longPressTimer = null;
 analysisTimer = null;
 wasLongPress = false;
 });
-// Mouse fallback
 chessEl.addEventListener('mousedown', (e) => handleTouchStart(e.clientY));
 chessEl.addEventListener('mouseup', (e) => handleTouchEnd(e.clientY));
-// CALCULATOR
+// ✅ CALCULATOR — NOW FULLY RESTORED
 const handleButton = (v) => {
 if (v === 'C') {
 currentInput = '0';
@@ -390,7 +384,7 @@ if (!currentInput.includes('.')) currentInput += '.';
 currentInput += v;
 }
 }
-updateDisplay();
+updateDisplay(); // ✅ CRITICAL: Restored display update
 };
 document.querySelectorAll('.btn').forEach(btn => {
 btn.addEventListener('click', () => handleButton(btn.dataset.value));
