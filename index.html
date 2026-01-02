@@ -109,6 +109,7 @@
     let fromSquare = null;
     let playerColor = 'white';
     let lastAIMove = null;
+    let lastAnalysis = null;
     let currentInput = '0';
     let operatorPressed = false;
     
@@ -151,6 +152,7 @@
       rank = 1;
       fromSquare = null;
       lastAIMove = null;
+      lastAnalysis = null;
       game = new Chess();
       calcEl.style.display = 'none';
       chessEl.style.opacity = '1';
@@ -172,55 +174,158 @@
       resetCalculator();
     };
     
-    // ✅ CLOUD CHESS ENGINE (chess-api.com)
-const fetchAIMove = async () => {
-  if (mode !== 'chess') return;
-  
-  speak("Thinking");
-  
-  try {
-    const fen = game.fen().replace(/\s+/g, '_'); // Lichess uses underscores
-    const url = `https://lichess.org/api/cloud-eval?fen=${fen}&multiPv=1`;
-    
-    const res = await fetch(url);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.pvs && data.pvs[0] && data.pvs[0].moves) {
-        const bestLine = data.pvs[0].moves;
-        const firstMove = bestLine.split(' ')[0]; // e.g., "e7e5"
+    // ✅ CLOUD CHESS ENGINE (Lichess Cloud Eval)
+    const fetchAIMove = async () => {
+      if (mode !== 'chess') return;
+      
+      speak("Thinking");
+      
+      try {
+        const fen = game.fen().replace(/\s+/g, '_');
+        const url = `https://lichess.org/api/cloud-eval?fen=${fen}&multiPv=1`;
+        const res = await fetch(url);
         
-        if (firstMove && firstMove.length === 4) {
-          const from = firstMove.slice(0, 2);
-          const to = firstMove.slice(2, 4);
-          const move = game.move({ from, to, promotion: 'q' });
-          
-          if (move) {
-            lastAIMove = { from, to };
-            speakMove(`Opponent ${from} to ${to}`);
-            vibrate([100]);
-            return;
+        if (res.ok) {
+          const data = await res.json();
+          if (data.pvs?.[0]?.moves) {
+            lastAnalysis = data;
+            const firstMove = data.pvs[0].moves.split(' ')[0];
+            if (firstMove?.length === 4) {
+              const from = firstMove.slice(0, 2);
+              const to = firstMove.slice(2, 4);
+              const move = game.move({ from, to, promotion: 'q' });
+              if (move) {
+                lastAIMove = { from, to };
+                speakMove(`Opponent ${from} to ${to}`);
+                vibrate([100]);
+                return;
+              }
+            }
           }
         }
+      } catch (error) {
+        console.error('Lichess move failed:', error);
       }
-    }
-  } catch (error) {
-    console.error('Lichess move failed:', error);
-  }
-  
-  // Fallback
-  const moves = game.moves({ verbose: true });
-  if (moves.length > 0) {
-    const move = moves[Math.floor(Math.random() * moves.length)];
-    game.move(move);
-    lastAIMove = { from: move.from, to: move.to };
-    speakMove(`Opponent ${move.from} to ${move.to}`);
-    vibrate([100]);
-  }
-};
+      
+      // Fallback
+      const moves = game.moves({ verbose: true });
+      if (moves.length > 0) {
+        const move = moves[0];
+        game.move(move);
+        lastAIMove = { from: move.from, to: move.to };
+        speakMove(`Opponent ${move.from} to ${move.to}`);
+        vibrate([100]);
+      }
+    };
     
-    // ... (rest of calculator and touch logic remains the same)
-    // I've omitted it for brevity, but keep your existing touch handling
+    // ✅ ANALYSIS SPEECH
+    const speakAnalysis = () => {
+      if (!lastAnalysis) {
+        speak("No analysis available");
+        return;
+      }
+      
+      const opening = lastAnalysis.opening?.name || "Unknown opening";
+      let evalText = "balanced";
+      const cp = lastAnalysis.pvs[0].cp;
+      
+      if (cp !== undefined) {
+        if (cp > 100) evalText = "winning for White";
+        else if (cp < -100) evalText = "winning for Black";
+        else if (cp > 30) evalText = "White has advantage";
+        else if (cp < -30) evalText = "Black has advantage";
+      }
+      
+      const bestLine = lastAnalysis.pvs[0].moves;
+      const bestMove = bestLine.split(' ')[0];
+      const from = bestMove?.slice(0, 2) || 'e2';
+      const to = bestMove?.slice(2, 4) || 'e4';
+      
+      speakMove(`${opening}. Position is ${evalText}. Best move: ${from} to ${to}.`);
+    };
     
+    // ✅ GESTURE SYSTEM
+    let longPressTimeout = null;
+    let isAnalysisMode = false;
+    
+    const handleStart = (clientY) => {
+      if (mode !== 'chess') return;
+      const isUpper = clientY < window.innerHeight / 2;
+      
+      if (isUpper) {
+        // Upper: confirm move
+        if (fromSquare) {
+          const coord = getCoord();
+          const move = game.move({ from: fromSquare, to: coord, promotion: 'q' });
+          if (move) {
+            speak(`To ${coord}`);
+            vibrate([200]);
+            fromSquare = null;
+            file = 0; rank = 1;
+            if (game.turn() === (playerColor === 'white' ? 'b' : 'w')) {
+              setTimeout(fetchAIMove, 300);
+            }
+          } else {
+            speak("Invalid");
+            vibrate([50, 50, 50]);
+          }
+        } else {
+          speak("No from");
+          vibrate([50, 50, 50]);
+        }
+        return;
+      }
+      
+      // Lower: set "from" → then analysis
+      isAnalysisMode = false;
+      longPressTimeout = setTimeout(() => {
+        const coord = getCoord();
+        fromSquare = coord;
+        speak(`From ${coord}`);
+        vibrate([50]);
+        file = 0; rank = 1;
+        
+        // After 2s total, speak analysis
+        const analysisTimeout = setTimeout(() => {
+          isAnalysisMode = true;
+          speakAnalysis();
+        }, 1400);
+        
+      }, 600);
+    };
+    
+    const handleEnd = (clientY) => {
+      if (mode !== 'chess') return;
+      if (longPressTimeout) clearTimeout(longPressTimeout);
+      
+      const isUpper = clientY < window.innerHeight / 2;
+      if (isUpper) rank = rank % 8 + 1;
+      else file = (file + 1) % 8;
+      
+      if (!isAnalysisMode) {
+        setTimeout(() => speak(getCoord()), 500);
+      }
+    };
+    
+    chessEl.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      handleStart(e.touches[0].clientY);
+    });
+    
+    chessEl.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      handleEnd(e.changedTouches[0].clientY);
+    });
+    
+    chessEl.addEventListener('touchcancel', () => {
+      if (longPressTimeout) clearTimeout(longPressTimeout);
+    });
+    
+    // Mouse fallback
+    chessEl.addEventListener('mousedown', (e) => handleStart(e.clientY));
+    chessEl.addEventListener('mouseup', (e) => handleEnd(e.clientY));
+    
+    // ✅ CALCULATOR LOGIC
     const handleButton = (v) => {
       if (v === 'C') { resetCalculator(); return; }
       if (v === '=') {
@@ -233,7 +338,6 @@ const fetchAIMove = async () => {
           return;
         }
       }
-      // ... rest of calculator logic
       if (v === '±') {
         if (currentInput !== '0') {
           currentInput = currentInput.startsWith('-') ? currentInput.slice(1) : '-' + currentInput;
@@ -269,96 +373,6 @@ const fetchAIMove = async () => {
     
     document.querySelectorAll('.btn').forEach(btn => {
       btn.addEventListener('click', () => handleButton(btn.dataset.value));
-    });
-    
-    // Touch handling
-    let longPressTimer = null;
-    let isLongPressing = false;
-    let startY = 0;
-    
-    const handleStart = (clientY) => {
-      if (mode !== 'chess') return;
-      startY = clientY;
-      isLongPressing = false;
-      longPressTimer = setTimeout(() => {
-        isLongPressing = true;
-        const isUpper = startY < window.innerHeight / 2;
-        handleLongPress(isUpper);
-      }, 600);
-    };
-    
-    const handleEnd = (clientY) => {
-      if (mode !== 'chess') return;
-      clearTimeout(longPressTimer);
-      if (isLongPressing) return;
-      
-      const isUpper = clientY < window.innerHeight / 2;
-      if (isUpper) rank = rank % 8 + 1;
-      else file = (file + 1) % 8;
-      
-      setTimeout(() => speak(getCoord()), 500);
-    };
-    
-    const handleLongPress = (isUpper) => {
-      const coord = getCoord();
-      if (!isUpper) {
-        fromSquare = coord;
-        speak(`From ${coord}`);
-        vibrate([50]);
-        file = 0;
-        rank = 1;
-      } else {
-        if (!fromSquare) {
-          speak("No from");
-          vibrate([50, 50, 50]);
-          return;
-        }
-        const move = game.move({ from: fromSquare, to: coord, promotion: 'q' });
-        if (move) {
-          speak(`To ${coord}`);
-          vibrate([200]);
-          fromSquare = null;
-          file = 0;
-          rank = 1;
-          if (game.turn() === (playerColor === 'white' ? 'b' : 'w')) {
-            setTimeout(fetchAIMove, 300);
-          }
-        } else {
-          speak("Invalid");
-          vibrate([50, 50, 50]);
-        }
-      }
-    };
-    
-    chessEl.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      handleStart(e.touches[0].clientY);
-    });
-    
-    chessEl.addEventListener('touchend', (e) => {
-      e.preventDefault();
-      handleEnd(e.changedTouches[0].clientY);
-    });
-    
-    chessEl.addEventListener('mousedown', (e) => handleStart(e.clientY));
-    chessEl.addEventListener('mouseup', (e) => handleEnd(e.clientY));
-    
-    // Repeat last AI move
-    let lastUpperTap = 0;
-    chessEl.addEventListener('touchend', (e) => {
-      const clientY = e.changedTouches[0].clientY;
-      const isUpper = clientY < window.innerHeight / 2;
-      const now = Date.now();
-      
-      if (isUpper && now - lastUpperTap < 300 && lastAIMove) {
-        speechSynthesis.cancel();
-        speakMove(`Opponent ${lastAIMove.from} to ${lastAIMove.to}`);
-        lastUpperTap = 0;
-        return;
-      }
-      lastUpperTap = now;
-      
-      handleEnd(clientY);
     });
     
     updateDisplay();
