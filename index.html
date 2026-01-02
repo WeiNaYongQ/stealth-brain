@@ -261,135 +261,57 @@ speakMove(`Opponent ${lastOpponentMove.from} to ${lastOpponentMove.to}`);
 }, 300);
 }
 };
-// TOUCH HANDLING
+// TOUCH HANDLING — FINAL VERSION
 let touchStartY = 0;
 let longPressTimer = null;
 let analysisTimer = null;
 let wasLongPress = false;
+let confirmTimer = null;
+let undoTimer = null;
 const handleTouchStart = (clientY) => {
 if (mode !== 'chess') return;
-touchStartY = clientY;
-wasLongPress = false;
+// Clean up previous timers
+if (confirmTimer) clearTimeout(confirmTimer);
+if (undoTimer) clearTimeout(undoTimer);
 if (longPressTimer) clearTimeout(longPressTimer);
 if (analysisTimer) clearTimeout(analysisTimer);
+touchStartY = clientY;
+wasLongPress = false;
 longPressTimer = setTimeout(() => {
 wasLongPress = true;
 const isUpper = touchStartY < window.innerHeight / 2;
 if (isUpper) {
-undoLastMove();
-} else {
-const coord = getCoord();
-fromSquare = coord;
-speak(`From ${coord}`);
-vibrate([50]);
-file = 0;
-rank = 1;
-analysisTimer = setTimeout(() => {
-speakAnalysis();
-}, 1400);
-}
-}, 600);
-};
-const handleTouchEnd = (clientY) => {
-if (mode !== 'chess') return;
-if (longPressTimer) {
-clearTimeout(longPressTimer);
-longPressTimer = null;
-if (!wasLongPress) {
-const isUpper = clientY < window.innerHeight / 2;
-if (isUpper) rank = rank % 8 + 1;
-else file = (file + 1) % 8;
-setTimeout(() => speak(getCoord()), 100);
-}
-}
-if (analysisTimer) {
-clearTimeout(analysisTimer);
-analysisTimer = null;
-}
-};
-chessEl.addEventListener('touchstart', (e) => {
-e.preventDefault();
-handleTouchStart(e.touches[0].clientY);
-});
-chessEl.addEventListener('touchend', (e) => {
-e.preventDefault();
-handleTouchEnd(e.changedTouches[0].clientY);
-});
-chessEl.addEventListener('touchcancel', () => {
-if (longPressTimer) clearTimeout(longPressTimer);
-if (analysisTimer) clearTimeout(analysisTimer);
-longPressTimer = null;
-analysisTimer = null;
-wasLongPress = false;
-});
-chessEl.addEventListener('mousedown', (e) => handleTouchStart(e.clientY));
-chessEl.addEventListener('mouseup', (e) => handleTouchEnd(e.clientY));
-// ✅ CALCULATOR — NOW FULLY RESTORED
-const handleButton = (v) => {
-if (v === 'C') {
-currentInput = '0';
-operatorPressed = false;
-updateDisplay();
-return;
-}
-if (v === '±') {
-if (currentInput !== '0') {
-currentInput = currentInput.startsWith('-') ? currentInput.slice(1) : '-' + currentInput;
-}
-updateDisplay();
-return;
-}
-if (v === '%') {
-const n = parseFloat(currentInput);
-if (!isNaN(n)) currentInput = (n / 100).toString();
-updateDisplay();
-return;
-}
-if (v === '=') {
-if (currentInput === '999') {
-switchToChess('white');
-return;
-}
-if (currentInput === '666') {
-switchToChess('black');
-return;
-}
-try {
-let result = Function('"use strict"; return (' + currentInput + ')')();
-currentInput = isNaN(result) || !isFinite(result) ? 'Error' : parseFloat(result.toFixed(10)).toString();
-} catch (e) {
-currentInput = 'Error';
-}
-operatorPressed = true;
-updateDisplay();
-return;
-}
-if (['+', '-', '*', '/'].includes(v)) {
-if (operatorPressed && ['+', '-', '*', '/'].includes(currentInput.slice(-1))) {
-currentInput = currentInput.slice(0, -1) + v;
-} else {
-currentInput += v;
-}
-operatorPressed = true;
-updateDisplay();
-return;
-}
-if (operatorPressed || currentInput === '0') {
-currentInput = v === '.' ? '0.' : v;
-operatorPressed = false;
-} else {
-if (v === '.') {
-if (!currentInput.includes('.')) currentInput += '.';
-} else {
-currentInput += v;
-}
-}
-updateDisplay(); // ✅ CRITICAL: Restored display update
-};
-document.querySelectorAll('.btn').forEach(btn => {
-btn.addEventListener('click', () => handleButton(btn.dataset.value));
-});
-updateDisplay();
-</script>
-</body>
-</html>
+  let confirmed = false;
+  // ✅ CONFIRM MOVE at 600ms
+  confirmTimer = setTimeout(() => {
+    if (fromSquare) {
+      const coord = getCoord();
+      const move = game.move({ from: fromSquare, to: coord, promotion: 'q' });
+      if (move) {
+        moveHistory.push({
+          from: fromSquare,
+          to: coord,
+          fen: game.fen()
+        });
+        lastOpponentMove = null;
+        speak(`To ${coord}`);
+        vibrate([200]);
+        fromSquare = null;
+        file = 0;
+        rank = 1;
+        confirmed = true;
+        if (game.turn() === (playerColor === 'white' ? 'b' : 'w')) {
+          setTimeout(fetchAIMove, 300);
+        }
+      } else {
+        speak("Invalid");
+        vibrate([50, 50, 50]);
+      }
+    } else {
+      speak("No from");
+      vibrate([50, 50, 50]);
+    }
+  }, 600);
+  // ✅ UNDO at 2000ms if still holding
+  undoTimer = setTimeout(() => {
+    if (confirm
