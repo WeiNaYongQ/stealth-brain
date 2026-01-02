@@ -91,7 +91,7 @@
       <button class="btn" data-value="1">1</button>
       <button class="btn" data-value="2">2</button>
       <button class="btn" data-value="3">3</button>
-      <button class="btn" data-value="+">+</button>
+      <button class="btn operator" data-value="+">+</button>
       <button class="btn zero" data-value="0">0</button>
       <button class="btn" data-value=".">.</button>
       <button class="btn" data-value="=">=</button>
@@ -270,115 +270,133 @@
       }
     };
     
-    // ✅ CORRECT TOUCH HANDLING — NO MORE ACCIDENTAL TRIGGERS
-let touchStartY = 0;
-let longPressTimer = null;
-let analysisTimer = null;
-let wasLongPress = false; // ✅ NEW FLAG
-
-const handleTouchStart = (clientY) => {
-  if (mode !== 'chess') return;
-  touchStartY = clientY;
-  wasLongPress = false; // reset
-  
-  if (longPressTimer) clearTimeout(longPressTimer);
-  if (analysisTimer) clearTimeout(analysisTimer);
-  
-  longPressTimer = setTimeout(() => {
-    wasLongPress = true; // ✅ Mark as long-press
+    // ✅ FINAL TOUCH HANDLING — NO MORE BUGS
+    let touchStartY = 0;
+    let longPressTimer = null;
+    let analysisTimer = null;
+    let wasLongPress = false;
     
-    const isUpper = touchStartY < window.innerHeight / 2;
-    if (isUpper) {
-      if (fromSquare) {
-        const coord = getCoord();
-        const move = game.move({ from: fromSquare, to: coord, promotion: 'q' });
-        if (move) {
-          moveHistory.push({ from: fromSquare, to: coord, fen: game.fen() });
-          lastOpponentMove = null;
-          speak(`To ${coord}`);
-          vibrate([200]);
-          fromSquare = null;
-          file = 0; rank = 1;
-          if (game.turn() === (playerColor === 'white' ? 'b' : 'w')) {
-            setTimeout(fetchAIMove, 300);
+    const handleTouchStart = (clientY) => {
+      if (mode !== 'chess') return;
+      touchStartY = clientY;
+      wasLongPress = false;
+      
+      if (longPressTimer) clearTimeout(longPressTimer);
+      if (analysisTimer) clearTimeout(analysisTimer);
+      
+      longPressTimer = setTimeout(() => {
+        wasLongPress = true;
+        const isUpper = touchStartY < window.innerHeight / 2;
+        
+        if (isUpper) {
+          if (fromSquare) {
+            const coord = getCoord();
+            const move = game.move({ from: fromSquare, to: coord, promotion: 'q' });
+            if (move) {
+              moveHistory.push({
+                from: fromSquare,
+                to: coord,
+                fen: game.fen()
+              });
+              lastOpponentMove = null;
+              speak(`To ${coord}`);
+              vibrate([200]);
+              fromSquare = null;
+              file = 0;
+              rank = 1;
+              if (game.turn() === (playerColor === 'white' ? 'b' : 'w')) {
+                setTimeout(fetchAIMove, 300);
+              }
+            } else {
+              speak("Invalid");
+              vibrate([50, 50, 50]);
+            }
+          } else {
+            undoLastMove();
           }
         } else {
-          speak("Invalid");
-          vibrate([50, 50, 50]);
+          const coord = getCoord();
+          fromSquare = coord;
+          speak(`From ${coord}`);
+          vibrate([50]);
+          file = 0;
+          rank = 1;
+          
+          analysisTimer = setTimeout(() => {
+            speakAnalysis();
+          }, 1400);
         }
-      } else {
-        undoLastMove();
-      }
-    } else {
-      const coord = getCoord();
-      fromSquare = coord;
-      speak(`From ${coord}`);
-      vibrate([50]);
-      file = 0; rank = 1;
-      
-      analysisTimer = setTimeout(() => {
-        speakAnalysis();
-      }, 1400);
-    }
-  }, 600);
-};
-
-const handleTouchEnd = (clientY) => {
-  if (mode !== 'chess') return;
-  
-  if (longPressTimer) {
-    clearTimeout(longPressTimer);
-    longPressTimer = null;
+      }, 600);
+    };
     
-    // ✅ ONLY speak coordinate if it was NOT a long-press
-    if (!wasLongPress) {
-      const isUpper = clientY < window.innerHeight / 2;
-      if (isUpper) rank = rank % 8 + 1;
-      else file = (file + 1) % 8;
+    const handleTouchEnd = (clientY) => {
+      if (mode !== 'chess') return;
       
-      setTimeout(() => speak(getCoord()), 100);
-    }
-  }
-  
-  if (analysisTimer) {
-    clearTimeout(analysisTimer);
-    analysisTimer = null;
-  }
-};
-
-// Event listeners (unchanged)
-chessEl.addEventListener('touchstart', (e) => {
-  e.preventDefault();
-  handleTouchStart(e.touches[0].clientY);
-});
-
-chessEl.addEventListener('touchend', (e) => {
-  e.preventDefault();
-  handleTouchEnd(e.changedTouches[0].clientY);
-});
-
-chessEl.addEventListener('touchcancel', () => {
-  if (longPressTimer) clearTimeout(longPressTimer);
-  if (analysisTimer) clearTimeout(analysisTimer);
-  longPressTimer = null;
-  analysisTimer = null;
-  wasLongPress = false;
-});
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+        
+        if (!wasLongPress) {
+          const isUpper = clientY < window.innerHeight / 2;
+          if (isUpper) rank = rank % 8 + 1;
+          else file = (file + 1) % 8;
+          
+          setTimeout(() => speak(getCoord()), 100);
+        }
+      }
+      
+      if (analysisTimer) {
+        clearTimeout(analysisTimer);
+        analysisTimer = null;
+      }
+    };
+    
+    chessEl.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      handleTouchStart(e.touches[0].clientY);
+    });
+    
+    chessEl.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      handleTouchEnd(e.changedTouches[0].clientY);
+    });
     
     chessEl.addEventListener('touchcancel', () => {
       if (longPressTimer) clearTimeout(longPressTimer);
       if (analysisTimer) clearTimeout(analysisTimer);
       longPressTimer = null;
       analysisTimer = null;
+      wasLongPress = false;
     });
     
     // Mouse fallback
     chessEl.addEventListener('mousedown', (e) => handleTouchStart(e.clientY));
     chessEl.addEventListener('mouseup', (e) => handleTouchEnd(e.clientY));
     
-    // Calculator
+    // ✅ CALCULATOR — FULLY WORKING
     const handleButton = (v) => {
-      if (v === 'C') { resetCalculator(); return; }
+      if (v === 'C') {
+        currentInput = '0';
+        operatorPressed = false;
+        updateDisplay();
+        return;
+      }
+      
+      if (v === '±') {
+        if (currentInput !== '0') {
+          currentInput = currentInput.startsWith('-') ? currentInput.slice(1) : '-' + currentInput;
+        }
+        updateDisplay();
+        return;
+      }
+      
+      if (v === '%') {
+        const n = parseFloat(currentInput);
+        if (!isNaN(n)) currentInput = (n / 100).toString();
+        updateDisplay();
+        return;
+      }
+      
       if (v === '=') {
         if (currentInput === '999') {
           switchToChess('white');
@@ -388,18 +406,17 @@ chessEl.addEventListener('touchcancel', () => {
           switchToChess('black');
           return;
         }
-      }
-      if (v === '±') {
-        if (currentInput !== '0') {
-          currentInput = currentInput.startsWith('-') ? currentInput.slice(1) : '-' + currentInput;
+        try {
+          let result = Function('"use strict"; return (' + currentInput + ')')();
+          currentInput = isNaN(result) || !isFinite(result) ? 'Error' : parseFloat(result.toFixed(10)).toString();
+        } catch (e) {
+          currentInput = 'Error';
         }
-        updateDisplay(); return;
+        operatorPressed = true;
+        updateDisplay();
+        return;
       }
-      if (v === '%') {
-        const n = parseFloat(currentInput);
-        if (!isNaN(n)) currentInput = (n / 100).toString();
-        updateDisplay(); return;
-      }
+      
       if (['+', '-', '*', '/'].includes(v)) {
         if (operatorPressed && ['+', '-', '*', '/'].includes(currentInput.slice(-1))) {
           currentInput = currentInput.slice(0, -1) + v;
@@ -407,8 +424,10 @@ chessEl.addEventListener('touchcancel', () => {
           currentInput += v;
         }
         operatorPressed = true;
-        updateDisplay(); return;
+        updateDisplay();
+        return;
       }
+      
       if (operatorPressed || currentInput === '0') {
         currentInput = v === '.' ? '0.' : v;
         operatorPressed = false;
