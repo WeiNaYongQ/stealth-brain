@@ -178,6 +178,15 @@
       resetCalculator();
     };
     
+    // ✅ CASTLING FIX
+    const normalizeMove = (uciMove) => {
+      if (uciMove === 'e1h1') return 'e1g1';
+      if (uciMove === 'e1a1') return 'e1c1';
+      if (uciMove === 'e8h8') return 'e8g8';
+      if (uciMove === 'e8a8') return 'e8c8';
+      return uciMove;
+    };
+    
     const fetchAIMove = async () => {
       if (mode !== 'chess') return;
       
@@ -194,9 +203,11 @@
             lastAnalysis = data;
             const firstMove = data.pvs[0].moves.split(' ')[0];
             if (firstMove?.length === 4) {
-              const from = firstMove.slice(0, 2);
-              const to = firstMove.slice(2, 4);
+              const normalizedMove = normalizeMove(firstMove);
+              const from = normalizedMove.slice(0, 2);
+              const to = normalizedMove.slice(2, 4);
               const move = game.move({ from, to, promotion: 'q' });
+              
               if (move) {
                 lastAIMove = { from, to };
                 lastOpponentMove = { from, to };
@@ -240,7 +251,7 @@
       }
       
       const bestLine = lastAnalysis.pvs[0].moves;
-      const bestMove = bestLine.split(' ')[0];
+      const bestMove = normalizeMove(bestLine.split(' ')[0]);
       const from = bestMove?.slice(0, 2) || 'e2';
       const to = bestMove?.slice(2, 4) || 'e4';
       
@@ -270,7 +281,7 @@
       }
     };
     
-    // ✅ FINAL TOUCH HANDLING — NO MORE BUGS
+    // TOUCH HANDLING
     let touchStartY = 0;
     let longPressTimer = null;
     let analysisTimer = null;
@@ -369,11 +380,10 @@
       wasLongPress = false;
     });
     
-    // Mouse fallback
     chessEl.addEventListener('mousedown', (e) => handleTouchStart(e.clientY));
     chessEl.addEventListener('mouseup', (e) => handleTouchEnd(e.clientY));
     
-    // ✅ CALCULATOR — FULLY WORKING
+    // CALCULATOR
     const handleButton = (v) => {
       if (v === 'C') {
         currentInput = '0';
