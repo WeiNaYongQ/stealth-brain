@@ -174,7 +174,6 @@
       resetCalculator();
     };
     
-    // ✅ CLOUD CHESS ENGINE (Lichess Cloud Eval)
     const fetchAIMove = async () => {
       if (mode !== 'chess') return;
       
@@ -207,7 +206,6 @@
         console.error('Lichess move failed:', error);
       }
       
-      // Fallback
       const moves = game.moves({ verbose: true });
       if (moves.length > 0) {
         const move = moves[0];
@@ -218,7 +216,6 @@
       }
     };
     
-    // ✅ ANALYSIS SPEECH
     const speakAnalysis = () => {
       if (!lastAnalysis) {
         speak("No analysis available");
@@ -244,88 +241,112 @@
       speakMove(`${opening}. Position is ${evalText}. Best move: ${from} to ${to}.`);
     };
     
-    // ✅ GESTURE SYSTEM
-    let longPressTimeout = null;
-    let isAnalysisMode = false;
+    // ✅ CORRECTED TOUCH HANDLING
+    let touchStartY = 0;
+    let touchStartTime = 0;
+    let isLongPressActive = false;
+    let analysisTimeout = null;
     
-    const handleStart = (clientY) => {
+    const handleTouchStart = (clientY) => {
       if (mode !== 'chess') return;
-      const isUpper = clientY < window.innerHeight / 2;
+      touchStartY = clientY;
+      touchStartTime = Date.now();
+      isLongPressActive = false;
       
-      if (isUpper) {
-        // Upper: confirm move
-        if (fromSquare) {
-          const coord = getCoord();
-          const move = game.move({ from: fromSquare, to: coord, promotion: 'q' });
-          if (move) {
-            speak(`To ${coord}`);
-            vibrate([200]);
-            fromSquare = null;
-            file = 0; rank = 1;
-            if (game.turn() === (playerColor === 'white' ? 'b' : 'w')) {
-              setTimeout(fetchAIMove, 300);
-            }
-          } else {
-            speak("Invalid");
-            vibrate([50, 50, 50]);
-          }
-        } else {
-          speak("No from");
-          vibrate([50, 50, 50]);
-        }
+      // Clear any pending analysis
+      if (analysisTimeout) {
+        clearTimeout(analysisTimeout);
+        analysisTimeout = null;
+      }
+    };
+    
+    const handleTouchEnd = (clientY) => {
+      if (mode !== 'chess') return;
+      
+      const isUpper = clientY < window.innerHeight / 2;
+      const touchDuration = Date.now() - touchStartTime;
+      
+      if (isLongPressActive) {
+        // Long-press handled separately — do nothing here
         return;
       }
       
-      // Lower: set "from" → then analysis
-      isAnalysisMode = false;
-      longPressTimeout = setTimeout(() => {
-        const coord = getCoord();
-        fromSquare = coord;
-        speak(`From ${coord}`);
-        vibrate([50]);
-        file = 0; rank = 1;
-        
-        // After 2s total, speak analysis
-        const analysisTimeout = setTimeout(() => {
-          isAnalysisMode = true;
-          speakAnalysis();
-        }, 1400);
-        
-      }, 600);
-    };
-    
-    const handleEnd = (clientY) => {
-      if (mode !== 'chess') return;
-      if (longPressTimeout) clearTimeout(longPressTimeout);
-      
-      const isUpper = clientY < window.innerHeight / 2;
+      // Short tap: cycle coordinate
       if (isUpper) rank = rank % 8 + 1;
       else file = (file + 1) % 8;
       
-      if (!isAnalysisMode) {
-        setTimeout(() => speak(getCoord()), 500);
-      }
+      setTimeout(() => speak(getCoord()), 500);
     };
     
+    // Long-press logic (separate from tap)
     chessEl.addEventListener('touchstart', (e) => {
       e.preventDefault();
-      handleStart(e.touches[0].clientY);
+      handleTouchStart(e.touches[0].clientY);
+      
+      // Start long-press timer
+      setTimeout(() => {
+        const isUpper = touchStartY < window.innerHeight / 2;
+        const touchDuration = Date.now() - touchStartTime;
+        
+        if (touchDuration >= 600 && !isLongPressActive) {
+          isLongPressActive = true;
+          
+          if (isUpper) {
+            // Confirm move
+            if (fromSquare) {
+              const coord = getCoord();
+              const move = game.move({ from: fromSquare, to: coord, promotion: 'q' });
+              if (move) {
+                speak(`To ${coord}`);
+                vibrate([200]);
+                fromSquare = null;
+                file = 0; rank = 1;
+                if (game.turn() === (playerColor === 'white' ? 'b' : 'w')) {
+                  setTimeout(fetchAIMove, 300);
+                }
+              } else {
+                speak("Invalid");
+                vibrate([50, 50, 50]);
+              }
+            } else {
+              speak("No from");
+              vibrate([50, 50, 50]);
+            }
+          } else {
+            // Set "from"
+            const coord = getCoord();
+            fromSquare = coord;
+            speak(`From ${coord}`);
+            vibrate([50]);
+            file = 0; rank = 1;
+            
+            // Start analysis timer (2s total)
+            analysisTimeout = setTimeout(() => {
+              speakAnalysis();
+            }, 1400); // 600ms + 1400ms = 2s
+          }
+        }
+      }, 600);
     });
     
     chessEl.addEventListener('touchend', (e) => {
       e.preventDefault();
-      handleEnd(e.changedTouches[0].clientY);
+      handleTouchEnd(e.changedTouches[0].clientY);
     });
     
     chessEl.addEventListener('touchcancel', () => {
-      if (longPressTimeout) clearTimeout(longPressTimeout);
+      isLongPressActive = false;
+      if (analysisTimeout) {
+        clearTimeout(analysisTimeout);
+        analysisTimeout = null;
+      }
     });
     
     // Mouse fallback
-    chessEl.addEventListener('mousedown', (e) => handleStart(e.clientY));
-    chessEl.addEventListener('mouseup', (e) => handleEnd(e.clientY));
+    chessEl.addEventListener('mousedown', (e) => handleTouchStart(e.clientY));
+    chessEl.addEventListener('mouseup', (e) => handleTouchEnd(e.clientY));
     
-    // ✅ CALCULATOR LOGIC
+    // Calculator
     const handleButton = (v) => {
       if (v === 'C') { resetCalculator(); return; }
       if (v === '=') {
