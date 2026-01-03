@@ -110,11 +110,13 @@
     let playerColor = 'white';
     let lastAIMove = null;
     let lastOpponentMove = null;
-    let lastAnalysis = null;
     let moveHistory = [];
     let currentInput = '0';
     let operatorPressed = false;
     
+    // Stockfish integration
+    let stockfish = null;
+
     const calcEl = document.getElementById('calculator');
     const chessEl = document.getElementById('chessLayer');
     const display = document.getElementById('display');
@@ -146,7 +148,30 @@
       display.textContent = currentInput.length > 12 ? 
         parseFloat(currentInput).toExponential(5) : currentInput;
     };
-    
+
+    // ✅ Initialize Stockfish.js
+    const initStockfish = () => {
+      if (stockfish) return;
+      stockfish = new Worker('https://cdn.jsdelivr.net/npm/stockfish.js@10/stockfish.worker.js');
+      stockfish.onmessage = (event) => {
+        const msg = event.data;
+        if (msg.startsWith('bestmove')) {
+          const moveStr = msg.split(' ')[1];
+          if (moveStr && moveStr !== '(none)') {
+            const from = moveStr.slice(0, 2);
+            const to = moveStr.slice(2, 4);
+            const move = game.move({ from, to, promotion: 'q' });
+            if (move) {
+              lastAIMove = { from, to };
+              lastOpponentMove = { from, to };
+              speakMove(`Opponent ${from} to ${to}`);
+              vibrate([100]);
+            }
+          }
+        }
+      };
+    };
+
     const switchToChess = (color) => {
       playerColor = color;
       mode = 'chess';
@@ -155,12 +180,13 @@
       fromSquare = null;
       lastAIMove = null;
       lastOpponentMove = null;
-      lastAnalysis = null;
       moveHistory = [];
       game = new Chess();
       calcEl.style.display = 'none';
       chessEl.style.opacity = '1';
       chessEl.style.pointerEvents = 'auto';
+      
+      initStockfish(); // Ensure engine is ready
       
       if (playerColor === 'black') {
         setTimeout(fetchAIMove, 300);
@@ -177,85 +203,18 @@
       speechSynthesis.cancel();
       resetCalculator();
     };
-    
-    // ✅ CASTLING FIX
-    const normalizeMove = (uciMove) => {
-      if (uciMove === 'e1h1') return 'e1g1';
-      if (uciMove === 'e1a1') return 'e1c1';
-      if (uciMove === 'e8h8') return 'e8g8';
-      if (uciMove === 'e8a8') return 'e8c8';
-      return uciMove;
-    };
-    
-    const fetchAIMove = async () => {
-      if (mode !== 'chess') return;
-      
+
+    // ✅ Use Stockfish instead of Lichess API
+    const fetchAIMove = () => {
+      if (mode !== 'chess' || !stockfish) return;
       speak("Thinking");
-      
-      try {
-        const fen = game.fen().replace(/\s+/g, '_');
-        const url = `https://lichess.org/api/cloud-eval?fen=${fen}&multiPv=1`;
-        const res = await fetch(url);
-        
-        if (res.ok) {
-          const data = await res.json();
-          if (data.pvs?.[0]?.moves) {
-            lastAnalysis = data;
-            const firstMove = data.pvs[0].moves.split(' ')[0];
-            if (firstMove?.length === 4) {
-              const normalizedMove = normalizeMove(firstMove);
-              const from = normalizedMove.slice(0, 2);
-              const to = normalizedMove.slice(2, 4);
-              const move = game.move({ from, to, promotion: 'q' });
-              
-              if (move) {
-                lastAIMove = { from, to };
-                lastOpponentMove = { from, to };
-                speakMove(`Opponent ${from} to ${to}`);
-                vibrate([100]);
-                return;
-              }
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Lichess move failed:', error);
-      }
-      
-      const moves = game.moves({ verbose: true });
-      if (moves.length > 0) {
-        const move = moves[0];
-        game.move(move);
-        lastAIMove = { from: move.from, to: move.to };
-        lastOpponentMove = { from: move.from, to: move.to };
-        speakMove(`Opponent ${move.from} to ${move.to}`);
-        vibrate([100]);
-      }
+      stockfish.postMessage(`position fen ${game.fen()}`);
+      stockfish.postMessage('go movetime 800'); // Adjust time as needed
     };
     
+    // Analysis is no longer from Lichess—remove or replace with local eval if needed
     const speakAnalysis = () => {
-      if (!lastAnalysis) {
-        speak("No analysis available");
-        return;
-      }
-      
-      const opening = lastAnalysis.opening?.name || "Unknown opening";
-      let evalText = "balanced";
-      const cp = lastAnalysis.pvs[0].cp;
-      
-      if (cp !== undefined) {
-        if (cp > 100) evalText = "winning for White";
-        else if (cp < -100) evalText = "winning for Black";
-        else if (cp > 30) evalText = "White has advantage";
-        else if (cp < -30) evalText = "Black has advantage";
-      }
-      
-      const bestLine = lastAnalysis.pvs[0].moves;
-      const bestMove = normalizeMove(bestLine.split(' ')[0]);
-      const from = bestMove?.slice(0, 2) || 'e2';
-      const to = bestMove?.slice(2, 4) || 'e4';
-      
-      speakMove(`${opening}. Position is ${evalText}. Best move: ${from} to ${to}.`);
+      speak("Analysis not available in this version.");
     };
     
     const undoLastMove = () => {
@@ -281,7 +240,7 @@
       }
     };
     
-    // TOUCH HANDLING
+    // TOUCH HANDLING (unchanged)
     let touchStartY = 0;
     let longPressTimer = null;
     let analysisTimer = null;
@@ -383,7 +342,7 @@
     chessEl.addEventListener('mousedown', (e) => handleTouchStart(e.clientY));
     chessEl.addEventListener('mouseup', (e) => handleTouchEnd(e.clientY));
     
-    // CALCULATOR
+    // CALCULATOR (unchanged)
     const handleButton = (v) => {
       if (v === 'C') {
         currentInput = '0';
