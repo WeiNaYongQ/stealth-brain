@@ -100,7 +100,8 @@
 
   <div id="chessLayer"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.min.js"></script>
+  <!-- Use non-minified chess.js to avoid potential parse issues -->
+  <script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.js"></script>
   
   <script>
     let mode = 'calculator';
@@ -114,7 +115,7 @@
     let currentInput = '0';
     let operatorPressed = false;
     
-    // Stockfish integration
+    // Stockfish integration (BLOB WORKER - works on GitHub Pages!)
     let stockfish = null;
 
     const calcEl = document.getElementById('calculator');
@@ -149,27 +150,59 @@
         parseFloat(currentInput).toExponential(5) : currentInput;
     };
 
-    // ✅ Initialize Stockfish.js
+    // ✅ NEW: Blob-based Stockfish (single-file, CSP-safe)
     const initStockfish = () => {
       if (stockfish) return;
-      stockfish = new Worker('https://cdn.jsdelivr.net/npm/stockfish.js@10/stockfish.worker.js');
-      stockfish.onmessage = (event) => {
-        const msg = event.data;
-        if (msg.startsWith('bestmove')) {
-          const moveStr = msg.split(' ')[1];
-          if (moveStr && moveStr !== '(none)') {
-            const from = moveStr.slice(0, 2);
-            const to = moveStr.slice(2, 4);
-            const move = game.move({ from, to, promotion: 'q' });
-            if (move) {
-              lastAIMove = { from, to };
-              lastOpponentMove = { from, to };
-              speakMove(`Opponent ${from} to ${to}`);
-              vibrate([100]);
+      
+      speak("Loading chess engine");
+      
+      fetch('https://cdn.jsdelivr.net/npm/stockfish.js@10/stockfish.js')
+        .then(response => {
+          if (!response.ok) throw new Error('Network response was not ok');
+          return response.text();
+        })
+        .then(code => {
+          const blob = new Blob([`
+            ${code}
+            // Initialize UCI interface
+            postMessage('uci');
+            postMessage('isready');
+            self.onmessage = (e) => {
+              if (e.data === 'quit') self.close();
+              else Stockfish.postMessage(e.data);
+            };
+            Stockfish.onmessage = (msg) => postMessage(msg.data);
+          `], { type: 'application/javascript' });
+          
+          stockfish = new Worker(URL.createObjectURL(blob));
+          
+          stockfish.onmessage = (event) => {
+            const msg = event.data;
+            if (msg.startsWith('bestmove')) {
+              const moveStr = msg.split(' ')[1];
+              if (moveStr && moveStr !== '(none)') {
+                const from = moveStr.slice(0, 2);
+                const to = moveStr.slice(2, 4);
+                const move = game.move({ from, to, promotion: 'q' });
+                if (move) {
+                  lastAIMove = { from, to };
+                  lastOpponentMove = { from, to };
+                  speakMove(`Opponent ${from} to ${to}`);
+                  vibrate([100]);
+                }
+              }
             }
-          }
-        }
-      };
+          };
+          
+          stockfish.onerror = (err) => {
+            console.error('Stockfish Worker error:', err);
+            speak("Engine failed to load.");
+          };
+        })
+        .catch(err => {
+          console.error('Failed to load Stockfish:', err);
+          speak("Could not connect to chess engine.");
+        });
     };
 
     const switchToChess = (color) => {
@@ -186,10 +219,10 @@
       chessEl.style.opacity = '1';
       chessEl.style.pointerEvents = 'auto';
       
-      initStockfish(); // Ensure engine is ready
+      initStockfish(); // Load engine on-demand
       
       if (playerColor === 'black') {
-        setTimeout(fetchAIMove, 300);
+        setTimeout(fetchAIMove, 500); // Slight delay to ensure engine loads
       } else {
         speak("White to move");
       }
@@ -202,19 +235,29 @@
       chessEl.style.pointerEvents = 'none';
       speechSynthesis.cancel();
       resetCalculator();
+      
+      // Clean up worker to save memory
+      if (stockfish) {
+        stockfish.postMessage('quit');
+        stockfish = null;
+      }
     };
 
-    // ✅ Use Stockfish instead of Lichess API
     const fetchAIMove = () => {
-      if (mode !== 'chess' || !stockfish) return;
+      if (mode !== 'chess' || !stockfish) {
+        // Fallback: if engine not ready, retry or use random move
+        if (mode === 'chess') {
+          speak("Engine not ready yet.");
+        }
+        return;
+      }
       speak("Thinking");
       stockfish.postMessage(`position fen ${game.fen()}`);
-      stockfish.postMessage('go movetime 800'); // Adjust time as needed
+      stockfish.postMessage('go movetime 1000'); // Stronger: 1 second
     };
     
-    // Analysis is no longer from Lichess—remove or replace with local eval if needed
     const speakAnalysis = () => {
-      speak("Analysis not available in this version.");
+      speak("Analysis is not available in this version.");
     };
     
     const undoLastMove = () => {
@@ -240,7 +283,7 @@
       }
     };
     
-    // TOUCH HANDLING (unchanged)
+    // TOUCH HANDLING
     let touchStartY = 0;
     let longPressTimer = null;
     let analysisTimer = null;
@@ -342,7 +385,7 @@
     chessEl.addEventListener('mousedown', (e) => handleTouchStart(e.clientY));
     chessEl.addEventListener('mouseup', (e) => handleTouchEnd(e.clientY));
     
-    // CALCULATOR (unchanged)
+    // CALCULATOR
     const handleButton = (v) => {
       if (v === 'C') {
         currentInput = '0';
