@@ -58,23 +58,20 @@ const calcEl = document.getElementById('calculator');
 const chessEl = document.getElementById('chessLayer');
 const display = document.getElementById('display');
 
-// ✅ Vibration
 const vibrate = (ms) => {
   if (navigator.vibrate) navigator.vibrate(ms);
 };
 
-// ✅ SPEECH THAT WORKS ON MOBILE
 const speak = (text) => {
   if (!speechSynthesis) return;
   speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.rate = 1.3;   // Clearer than 2.0
-  utterance.volume = 1.0; // Max volume
-  utterance.lang = 'en-US';
-  speechSynthesis.speak(utterance);
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = 1.3;
+  u.volume = 1.0;
+  u.lang = 'en-US';
+  speechSynthesis.speak(u);
 };
 
-// ✅ Switch to Chess
 const switchToChess = (color) => {
   mode = 'chess';
   calcEl.style.display = 'none';
@@ -107,7 +104,6 @@ const resetInputCycle = () => {
   currentNumber = 1;
 };
 
-// ✅ STRONG, WORKING ENGINE
 const fetchBestMove = async () => {
   speak("Thinking");
   try {
@@ -133,7 +129,6 @@ const fetchBestMove = async () => {
       }
     }
   } catch (e) {}
-  // Fallback
   const moves = game.moves({ verbose: true });
   if (moves.length > 0) {
     const move = moves[0];
@@ -145,28 +140,25 @@ const fetchBestMove = async () => {
   }
 };
 
-// ✅ TOUCH HANDLING — GUARANTEED SPEECH
+// ✅ FIXED TOUCH HANDLING — SPEECH ON touchend
+let touchStartTime = 0;
 let longPressTimer = null;
-const LONG_PRESS = 1200;
+const LONG_PRESS_THRESHOLD = 1200;
 
 chessEl.addEventListener('touchstart', (e) => {
   if (mode !== 'chess') return;
   e.preventDefault();
-  const y = e.touches[0].clientY;
-  const isUpper = y < window.innerHeight / 2;
-
-  // Clear any pending long-press
+  touchStartTime = Date.now();
   if (longPressTimer) clearTimeout(longPressTimer);
-
-  // Start long-press timer
+  
   longPressTimer = setTimeout(() => {
+    const y = e.touches[0].clientY;
+    const isUpper = y < window.innerHeight / 2;
     if (isUpper) {
-      // Long-hold Upper: Undo
       if (moveHistory.length > 0) {
         moveHistory.pop();
-        if (moveHistory.length > 0) moveHistory.pop(); // undo pair
         const last = moveHistory[moveHistory.length - 1];
-        game = new Chess(last ? last.fen : 'start');
+        game = new Chess(last ? last.fen : 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
         speak("Undone");
         vibrate(50);
         resetInputCycle();
@@ -174,68 +166,46 @@ chessEl.addEventListener('touchstart', (e) => {
         speak("No move");
       }
     } else {
-      // Long-hold Lower: Replay best move
       if (lastBestMove) {
-        speak(`Best move: ${lastBestMove.from} to ${lastBestMove.to}`);
+        speak(`Best: ${lastBestMove.from} to ${lastBestMove.to}`);
       } else {
-        speak("No move");
+        speak("No best move");
       }
     }
-  }, LONG_PRESS);
-
-  // IMMEDIATE TAP FEEDBACK
-  if (isUpper) {
-    speak(currentNumber.toString());
-    vibrate(10);
-    currentNumber = currentNumber % 8 + 1;
-  } else {
-    speak(String.fromCharCode(97 + currentLetter));
-    vibrate(10);
-    currentLetter = (currentLetter + 1) % 8;
-  }
+  }, LONG_PRESS_THRESHOLD);
 });
 
 chessEl.addEventListener('touchend', (e) => {
   if (mode !== 'chess') return;
   e.preventDefault();
+  const duration = Date.now() - touchStartTime;
   if (longPressTimer) {
     clearTimeout(longPressTimer);
     longPressTimer = null;
-
+  }
+  if (duration < LONG_PRESS_THRESHOLD - 100) {
     const y = e.changedTouches[0].clientY;
     const isUpper = y < window.innerHeight / 2;
-
     if (isUpper) {
-      // Short-hold Upper: Confirm move
-      if (fromSquare) {
-        const toSq = String.fromCharCode(97 + currentLetter) + currentNumber;
-        const move = game.move({ from: fromSquare, to: toSq, promotion: 'q' });
-        if (move) {
-          moveHistory.push({ fen: game.fen() });
-          speak(`To ${toSq}`);
-          vibrate(50);
-          fromSquare = null;
-          resetInputCycle();
-          if (game.turn() === 'b') setTimeout(fetchBestMove, 300);
-        } else {
-          speak("Invalid");
-          vibrate(10);
-        }
-      } else {
-        speak("No from");
-        vibrate(10);
-      }
+      speak(currentNumber.toString());
+      vibrate(10);
+      currentNumber = currentNumber % 8 + 1;
     } else {
-      // Short-hold Lower: Set "From"
-      fromSquare = String.fromCharCode(97 + currentLetter) + currentNumber;
-      speak(`From ${fromSquare}`);
-      vibrate(50);
-      resetInputCycle();
+      speak(String.fromCharCode(97 + currentLetter));
+      vibrate(10);
+      currentLetter = (currentLetter + 1) % 8;
     }
   }
 });
 
-// ✅ CALCULATOR
+chessEl.addEventListener('touchcancel', () => {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+});
+
+// CALCULATOR
 let currentInput = '0';
 let operatorPressed = false;
 const updateDisplay = () => {
