@@ -6,436 +6,471 @@
 <title>Calculator</title>
 <style>
 * {
-margin: 0;
-padding: 0;
-box-sizing: border-box;
--webkit-tap-highlight-color: transparent;
--webkit-touch-callout: none;
-user-select: none;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
 }
 body, html {
-height: 100%;
-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-background: #000;
-color: white;
-overflow: hidden;
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #000;
+  color: white;
+  overflow: hidden;
 }
 #calculator {
-display: flex;
-flex-direction: column;
-height: 100%;
-padding: 20px 0 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 20px 0 0;
 }
 #display {
-padding: 0 20px 20px;
-text-align: right;
-font-size: 80px;
-min-height: 120px;
-display: flex;
-align-items: flex-end;
-justify-content: flex-end;
-overflow: hidden;
-white-space: nowrap;
+  padding: 0 20px 20px;
+  text-align: right;
+  font-size: 80px;
+  min-height: 120px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  overflow: hidden;
+  white-space: nowrap;
 }
 #buttons {
-display: grid;
-grid-template-columns: repeat(4, 1fr);
-grid-template-rows: repeat(5, 1fr);
-gap: 16px;
-padding: 0 16px 24px;
-flex: 1;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(5, 1fr);
+  gap: 16px;
+  padding: 0 16px 24px;
+  flex: 1;
 }
 .btn {
-background: #333;
-border-radius: 50%;
-font-size: 32px;
-display: flex;
-align-items: center;
-justify-content: center;
-color: white;
-border: none;
-cursor: pointer;
+  background: #333;
+  border-radius: 50%;
+  font-size: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  border: none;
+  cursor: pointer;
 }
 .btn:active { background: #444; }
 .btn.operator { background: #f1a33c; }
 .btn.operator:active { background: #d99234; }
 .btn.zero { grid-column: span 2; border-radius: 36px; }
 #chessLayer {
-position: absolute;
-top: 0;
-left: 0;
-width: 100%;
-height: 100%;
-background: #000;
-opacity: 0;
-pointer-events: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
 }
 </style>
 </head>
 <body>
 <div id="calculator">
-<div id="display">0</div>
-<div id="buttons">
-<button class="btn clear" data-value="C">C</button>
-<button class="btn" data-value="±">±</button>
-<button class="btn" data-value="%">%</button>
-<button class="btn operator" data-value="/">÷</button>
-<button class="btn" data-value="7">7</button>
-<button class="btn" data-value="8">8</button>
-<button class="btn" data-value="9">9</button>
-<button class="btn operator" data-value="*">×</button>
-<button class="btn" data-value="4">4</button>
-<button class="btn" data-value="5">5</button>
-<button class="btn" data-value="6">6</button>
-<button class="btn operator" data-value="-">−</button>
-<button class="btn" data-value="1">1</button>
-<button class="btn" data-value="2">2</button>
-<button class="btn" data-value="3">3</button>
-<button class="btn operator" data-value="+">+</button>
-<button class="btn zero" data-value="0">0</button>
-<button class="btn" data-value=".">.</button>
-<button class="btn" data-value="=">=</button>
-</div>
+  <div id="display">0</div>
+  <div id="buttons">
+    <button class="btn clear" data-value="C">C</button>
+    <button class="btn" data-value="±">±</button>
+    <button class="btn" data-value="%">%</button>
+    <button class="btn operator" data-value="/">÷</button>
+    <button class="btn" data-value="7">7</button>
+    <button class="btn" data-value="8">8</button>
+    <button class="btn" data-value="9">9</button>
+    <button class="btn operator" data-value="*">×</button>
+    <button class="btn" data-value="4">4</button>
+    <button class="btn" data-value="5">5</button>
+    <button class="btn" data-value="6">6</button>
+    <button class="btn operator" data-value="-">−</button>
+    <button class="btn" data-value="1">1</button>
+    <button class="btn" data-value="2">2</button>
+    <button class="btn" data-value="3">3</button>
+    <button class="btn operator" data-value="+">+</button>
+    <button class="btn zero" data-value="0">0</button>
+    <button class="btn" data-value=".">.</button>
+    <button class="btn" data-value="=">=</button>
+  </div>
 </div>
 <div id="chessLayer"></div>
 <script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.min.js"></script>
 <script>
 let mode = 'calculator';
-let file = 0, rank = 1;
-let game = new Chess();
+let currentLetter = 0; // a=0
+let currentNumber = 1; // 1-8
 let fromSquare = null;
-let playerColor = 'white';
-let lastOpponentMove = null;
+let game = new Chess();
+let lastBestMove = null;
 let moveHistory = [];
-let currentInput = '0';
-let operatorPressed = false;
+let resumeData = null;
+
+// Load saved game on startup
+const saved = localStorage.getItem('chessSave');
+if (saved) {
+  try {
+    resumeData = JSON.parse(saved);
+  } catch (e) {}
+}
+
 const calcEl = document.getElementById('calculator');
 const chessEl = document.getElementById('chessLayer');
 const display = document.getElementById('display');
-const vibrate = (pattern) => {
-if (navigator.vibrate) navigator.vibrate(pattern);
+
+const vibrate = (ms) => {
+  if (navigator.vibrate) navigator.vibrate(ms);
 };
-const speak = (text, rate = 1.7) => {
-speechSynthesis.cancel();
-const utterance = new SpeechSynthesisUtterance(text);
-utterance.rate = rate;
-utterance.volume = 0.85;
-utterance.lang = 'en-US';
-speechSynthesis.speak(utterance);
+
+const speak = (text) => {
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = 2.0;
+  u.volume = 0.9;
+  u.lang = 'en-US';
+  speechSynthesis.speak(u);
 };
-const speakMove = (text) => speak(text, 1.3);
-const getCoord = () => String.fromCharCode(97 + file) + rank;
-const resetCalculator = () => {
-currentInput = '0';
-operatorPressed = false;
-updateDisplay();
+
+const switchToChess = (color, resume = false) => {
+  mode = 'chess';
+  calcEl.style.display = 'none';
+  chessEl.style.opacity = '1';
+  chessEl.style.pointerEvents = 'auto';
+
+  if (resume && resumeData) {
+    game = new Chess(resumeData.fen);
+    moveHistory = resumeData.history || [];
+    lastBestMove = resumeData.lastBestMove;
+    speak("Game resumed");
+  } else {
+    game = new Chess();
+    moveHistory = [];
+    lastBestMove = null;
+    if (color === 'black') {
+      setTimeout(fetchBestMove, 100);
+    } else {
+      speak("White to move");
+    }
+  }
+
+  // Reset input cycles
+  resetInputCycle();
 };
-const updateDisplay = () => {
-display.textContent = currentInput.length > 12 ?
-parseFloat(currentInput).toExponential(5) : currentInput;
-};
-const switchToChess = (color) => {
-playerColor = color;
-mode = 'chess';
-file = 0;
-rank = 1;
-fromSquare = null;
-lastOpponentMove = null;
-moveHistory = [];
-game = new Chess();
-calcEl.style.display = 'none';
-chessEl.style.opacity = '1';
-chessEl.style.pointerEvents = 'auto';
-if (playerColor === 'black') {
-setTimeout(fetchAIMove, 500);
-} else {
-speak("White to move");
-}
-};
+
 const switchToCalculator = () => {
-mode = 'calculator';
-calcEl.style.display = 'flex';
-chessEl.style.opacity = '0';
-chessEl.style.pointerEvents = 'none';
-speechSynthesis.cancel();
-resetCalculator();
+  mode = 'calculator';
+  calcEl.style.display = 'flex';
+  chessEl.style.opacity = '0';
+  chessEl.style.pointerEvents = 'none';
+  speechSynthesis.cancel();
+  resetCalculator();
 };
-// ✅ CASTLING NORMALIZATION (optional but safe)
-const normalizeMove = (uciMove) => {
-if (uciMove === 'e1h1') return 'e1g1';
-if (uciMove === 'e1a1') return 'e1c1';
-if (uciMove === 'e8h8') return 'e8g8';
-if (uciMove === 'e8a8') return 'e8c8';
-return uciMove;
+
+const resetInputCycle = () => {
+  currentLetter = 0;
+  currentNumber = 1;
 };
-// ✅ STRONG ENGINE — ONLY CHANGE
-const fetchAIMove = async () => {
-  if (mode !== 'chess') return;
+
+const resetCalculator = () => {
+  currentInput = '0';
+  operatorPressed = false;
+  updateDisplay();
+};
+
+let currentInput = '0';
+let operatorPressed = false;
+
+const updateDisplay = () => {
+  display.textContent = currentInput.length > 12 ?
+    parseFloat(currentInput).toExponential(5) : currentInput;
+};
+
+const saveGameState = () => {
+  localStorage.setItem('chessSave', JSON.stringify({
+    fen: game.fen(),
+    history: moveHistory,
+    lastBestMove: lastBestMove
+  }));
+};
+
+const fetchBestMove = async () => {
   speak("Thinking");
   try {
-    const response = await fetch('https://chess.swehosting.se/api/v1/', {
+    const res = await fetch('https://chess-api.com/v1', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fen: game.fen(),
-        depth: 18
-      })
+      body: JSON.stringify({ fen: game.fen() })
     });
-    if (response.ok) {
-      const data = await response.json();
-      let bestMove = data.bestmove;
+    if (res.ok) {
+      const data = await res.json();
+      const bestMove = data.bestmove;
       if (bestMove && bestMove.length === 4) {
-        bestMove = normalizeMove(bestMove);
         const from = bestMove.slice(0, 2);
         const to = bestMove.slice(2, 4);
         const move = game.move({ from, to, promotion: 'q' });
         if (move) {
-          lastOpponentMove = { from, to };
-          speakMove(`Opponent ${from} to ${to}`);
-          vibrate([100]);
-
-          // ✅ Reset input state
-          file = 0;
-          rank = 1;
+          lastBestMove = { from, to };
+          speak(`Opponent ${from} to ${to}`);
+          vibrate(50);
+          saveGameState();
+          resetInputCycle();
           return;
         }
       }
     }
-  } catch (error) {
-    console.error('Engine API failed:', error);
-  }
-
+  } catch (e) {}
   // Fallback
   const moves = game.moves({ verbose: true });
   if (moves.length > 0) {
     const move = moves[0];
     game.move(move);
-    lastOpponentMove = { from: move.from, to: move.to };
-    speakMove(`Opponent ${move.from} to ${move.to}`);
-    vibrate([100]);
-
-    // ✅ Reset input state
-    file = 0;
-    rank = 1;
+    lastBestMove = { from: move.from, to: move.to };
+    speak(`Opponent ${move.from} to ${move.to}`);
+    vibrate(50);
+    saveGameState();
+    resetInputCycle();
   }
 };
-const undoLastMove = () => {
-if (moveHistory.length === 0) {
-speak("No move to undo");
-vibrate([50, 50, 50]);
-return;
-}
-const lastMove = moveHistory.pop();
-game = new Chess(lastMove.fen);
-fromSquare = null;
-file = 0;
-rank = 1;
-speak("Move undone");
-vibrate([100, 50]);
-if (lastOpponentMove) {
-setTimeout(() => {
-speakMove(`Opponent ${lastOpponentMove.from} to ${lastOpponentMove.to}`);
-}, 300);
-}
+
+// Panic toggle state
+let panicSequence = [];
+const MAX_SEQUENCE_TIME = 1000; // ms
+
+const addToPanicSequence = (zone) => {
+  const now = Date.now();
+  // Remove old entries
+  panicSequence = panicSequence.filter(t => now - t.time < MAX_SEQUENCE_TIME);
+  panicSequence.push({ zone, time: now });
+
+  // Check for L-U-L-U pattern
+  if (panicSequence.length >= 4) {
+    const last4 = panicSequence.slice(-4);
+    const pattern = last4.map(e => e.zone).join('');
+    if (pattern === 'lulu') {
+      switchToCalculator();
+      panicSequence = [];
+    }
+  }
 };
-// TOUCH HANDLING — FULLY PRESERVED
-let touchStartY = 0;
-let longPressTimer = null;
-let analysisTimer = null;
-let wasLongPress = false;
-let confirmTimer = null;
-let undoTimer = null;
-const handleTouchStart = (clientY) => {
-if (mode !== 'chess') return;
-if (confirmTimer) clearTimeout(confirmTimer);
-if (undoTimer) clearTimeout(undoTimer);
-if (longPressTimer) clearTimeout(longPressTimer);
-if (analysisTimer) clearTimeout(analysisTimer);
-touchStartY = clientY;
-wasLongPress = false;
-longPressTimer = setTimeout(() => {
-wasLongPress = true;
-const isUpper = touchStartY < window.innerHeight / 2;
-if (isUpper) {
-  let confirmed = false;
-  confirmTimer = setTimeout(() => {
-    if (fromSquare) {
-      const coord = getCoord();
-      const move = game.move({ from: fromSquare, to: coord, promotion: 'q' });
-      if (move) {
-        moveHistory.push({
-          from: fromSquare,
-          to: coord,
-          fen: game.fen()
-        });
-        lastOpponentMove = null;
-        speak(`To ${coord}`);
-        vibrate([200]);
-        fromSquare = null;
-        file = 0;
-        rank = 1;
-        confirmed = true;
-        if (game.turn() === (playerColor === 'white' ? 'b' : 'w')) {
-          setTimeout(fetchAIMove, 300);
+
+// Touch handling
+chessEl.addEventListener('touchstart', (e) => {
+  if (mode !== 'chess') return;
+  e.preventDefault();
+  const clientY = e.touches[0].clientY;
+  const isUpper = clientY < window.innerHeight / 2;
+  const zone = isUpper ? 'u' : 'l';
+
+  // For panic toggle
+  addToPanicSequence(zone);
+
+  // Handle letter/number cycling
+  if (!longPressTimers.has('lower') && !longPressTimers.has('upper')) {
+    if (!isUpper) {
+      // Lower: cycle letter
+      speak(String.fromCharCode(97 + currentLetter));
+      vibrate(10);
+      currentLetter = (currentLetter + 1) % 8;
+    } else {
+      // Upper: cycle number
+      speak(currentNumber.toString());
+      vibrate(10);
+      currentNumber = currentNumber % 8 + 1;
+    }
+  }
+});
+
+// Long press handling
+const longPressTimers = new Map();
+const LONG_PRESS_THRESHOLD = 1200; // 1.2 seconds
+
+const startLongPress = (zone) => {
+  if (longPressTimers.has(zone)) return;
+  longPressTimers.set(zone, setTimeout(() => {
+    if (zone === 'lower') {
+      // Long-hold Lower: analysis + replay
+      if (lastBestMove) {
+        speak(`Best move: ${lastBestMove.from} to ${lastBestMove.to}`);
+      } else {
+        speak("No analysis");
+      }
+    } else {
+      // Long-hold Upper: undo
+      if (moveHistory.length >= 2) {
+        // Undo two moves (full pair)
+        moveHistory.pop();
+        const prev = moveHistory.pop();
+        if (prev) {
+          game = new Chess(prev.fen);
+          speak("Move pair undone");
+          vibrate(50);
+          saveGameState();
+          resetInputCycle();
+        }
+      } else if (moveHistory.length === 1) {
+        const prev = moveHistory.pop();
+        game = new Chess(prev.fen);
+        speak("Move undone");
+        vibrate(50);
+        saveGameState();
+        resetInputCycle();
+      } else {
+        speak("Nothing to undo");
+      }
+    }
+    clearLongPress(zone);
+  }, LONG_PRESS_THRESHOLD));
+};
+
+const clearLongPress = (zone) => {
+  if (longPressTimers.has(zone)) {
+    clearTimeout(longPressTimers.get(zone));
+    longPressTimers.delete(zone);
+  }
+};
+
+chessEl.addEventListener('touchstart', (e) => {
+  if (mode !== 'chess') return;
+  e.preventDefault();
+  const clientY = e.touches[0].clientY;
+  const isUpper = clientY < window.innerHeight / 2;
+  const zone = isUpper ? 'upper' : 'lower';
+
+  // Already handled tap above; now handle long press
+  setTimeout(() => {
+    if (!longPressTimers.has('lower') && !longPressTimers.has('upper')) {
+      startLongPress(zone);
+    }
+  }, 0);
+});
+
+chessEl.addEventListener('touchend', (e) => {
+  if (mode !== 'chess') return;
+  e.preventDefault();
+  const clientY = e.changedTouches[0].clientY;
+  const isUpper = clientY < window.innerHeight / 2;
+  const zone = isUpper ? 'upper' : 'lower';
+
+  if (longPressTimers.has(zone)) {
+    // Short hold: action
+    clearTimeout(longPressTimers.get(zone));
+    longPressTimers.delete(zone);
+
+    if (zone === 'lower') {
+      // Set "From"
+      fromSquare = String.fromCharCode(97 + currentLetter) + currentNumber;
+      speak(`From ${fromSquare}`);
+      vibrate(50);
+      resetInputCycle(); // 00-Start for "To"
+    } else {
+      // Confirm move
+      if (fromSquare) {
+        const toSquare = String.fromCharCode(97 + currentLetter) + currentNumber;
+        const move = game.move({ from: fromSquare, to: toSquare, promotion: 'q' });
+        if (move) {
+          moveHistory.push({ fen: game.fen() });
+          speak(`To ${toSquare}`);
+          vibrate(50);
+          fromSquare = null;
+          saveGameState();
+          resetInputCycle();
+
+          // Trigger AI if it's their turn
+          if (game.turn() === (game.turn() === 'w' ? 'b' : 'w')) {
+            // Actually, we just check: if black to move after white played
+            setTimeout(fetchBestMove, 100);
+          }
+        } else {
+          speak("Invalid");
+          vibrate(10);
         }
       } else {
-        speak("Invalid");
-        vibrate([50, 50, 50]);
+        speak("No from");
+        vibrate(10);
       }
-    } else {
-      speak("No from");
-      vibrate([50, 50, 50]);
     }
-  }, 600);
-  undoTimer = setTimeout(() => {
-    if (confirmTimer) clearTimeout(confirmTimer);
-    if (confirmed) {
-      if (moveHistory.length > 0) {
-        const lastMove = moveHistory.pop();
-        game = new Chess(lastMove.fen);
-        fromSquare = null;
-        file = 0;
-        rank = 1;
-        speak("Move undone");
-        vibrate([100, 50]);
-        if (lastOpponentMove) {
-          setTimeout(() => {
-            speakMove(`Opponent ${lastOpponentMove.from} to ${lastOpponentMove.to}`);
-          }, 300);
-        }
-      }
-    } else {
-      undoLastMove();
-    }
-  }, 2000);
-} else {
-  const coord = getCoord();
-  fromSquare = coord;
-  speak(`From ${coord}`);
-  vibrate([50]);
-  file = 0;
-  rank = 1;
-  analysisTimer = setTimeout(() => {
-    if (lastOpponentMove) {
-      speakMove(`Opponent ${lastOpponentMove.from} to ${lastOpponentMove.to}`);
-    } else {
-      speak("No opponent move");
-    }
-  }, 1400);
-}
-}, 600);
-};
-const handleTouchEnd = (clientY) => {
-if (mode !== 'chess') return;
-if (longPressTimer) {
-clearTimeout(longPressTimer);
-longPressTimer = null;
-if (!wasLongPress) {
-const isUpper = clientY < window.innerHeight / 2;
-if (isUpper) rank = rank % 8 + 1;
-else file = (file + 1) % 8;
-setTimeout(() => speak(getCoord()), 100);
-}
-}
-if (analysisTimer) {
-clearTimeout(analysisTimer);
-analysisTimer = null;
-}
-if (confirmTimer) {
-clearTimeout(confirmTimer);
-confirmTimer = null;
-}
-if (undoTimer) {
-clearTimeout(undoTimer);
-undoTimer = null;
-}
-};
-chessEl.addEventListener('touchstart', (e) => {
-e.preventDefault();
-handleTouchStart(e.touches[0].clientY);
+  }
 });
-chessEl.addEventListener('touchend', (e) => {
-e.preventDefault();
-handleTouchEnd(e.changedTouches[0].clientY);
-});
+
 chessEl.addEventListener('touchcancel', () => {
-if (longPressTimer) clearTimeout(longPressTimer);
-if (analysisTimer) clearTimeout(analysisTimer);
-if (confirmTimer) clearTimeout(confirmTimer);
-if (undoTimer) clearTimeout(undoTimer);
-longPressTimer = null;
-analysisTimer = null;
-confirmTimer = null;
-undoTimer = null;
-wasLongPress = false;
+  longPressTimers.forEach(timer => clearTimeout(timer));
+  longPressTimers.clear();
 });
-chessEl.addEventListener('mousedown', (e) => handleTouchStart(e.clientY));
-chessEl.addEventListener('mouseup', (e) => handleTouchEnd(e.clientY));
-// ✅ CALCULATOR — FULLY WORKING
+
+// Calculator logic
 const handleButton = (v) => {
-if (v === 'C') {
-currentInput = '0';
-operatorPressed = false;
-updateDisplay();
-return;
-}
-if (v === '±') {
-if (currentInput !== '0') {
-currentInput = currentInput.startsWith('-') ? currentInput.slice(1) : '-' + currentInput;
-}
-updateDisplay();
-return;
-}
-if (v === '%') {
-const n = parseFloat(currentInput);
-if (!isNaN(n)) currentInput = (n / 100).toString();
-updateDisplay();
-return;
-}
-if (v === '=') {
-if (currentInput === '999') {
-switchToChess('white');
-return;
-}
-if (currentInput === '666') {
-switchToChess('black');
-return;
-}
-try {
-let result = Function('"use strict"; return (' + currentInput + ')')();
-currentInput = isNaN(result) || !isFinite(result) ? 'Error' : parseFloat(result.toFixed(10)).toString();
-} catch (e) {
-currentInput = 'Error';
-}
-operatorPressed = true;
-updateDisplay();
-return;
-}
-if (['+', '-', '*', '/'].includes(v)) {
-if (operatorPressed && ['+', '-', '*', '/'].includes(currentInput.slice(-1))) {
-currentInput = currentInput.slice(0, -1) + v;
-} else {
-currentInput += v;
-}
-operatorPressed = true;
-updateDisplay();
-return;
-}
-if (operatorPressed || currentInput === '0') {
-currentInput = v === '.' ? '0.' : v;
-operatorPressed = false;
-} else {
-if (v === '.') {
-if (!currentInput.includes('.')) currentInput += '.';
-} else {
-currentInput += v;
-}
-}
-updateDisplay();
+  if (v === 'C') {
+    currentInput = '0';
+    operatorPressed = false;
+    updateDisplay();
+    return;
+  }
+  if (v === '±') {
+    if (currentInput !== '0') {
+      currentInput = currentInput.startsWith('-') ? currentInput.slice(1) : '-' + currentInput;
+    }
+    updateDisplay();
+    return;
+  }
+  if (v === '%') {
+    const n = parseFloat(currentInput);
+    if (!isNaN(n)) currentInput = (n / 100).toString();
+    updateDisplay();
+    return;
+  }
+  if (v === '=') {
+    if (currentInput === '666') {
+      switchToChess('white');
+      return;
+    }
+    if (currentInput === '999') {
+      switchToChess('black');
+      return;
+    }
+    if (currentInput === '888') {
+      switchToChess('white', true); // resume
+      return;
+    }
+    try {
+      let result = Function('"use strict"; return (' + currentInput + ')')();
+      currentInput = isNaN(result) || !isFinite(result) ? 'Error' : parseFloat(result.toFixed(10)).toString();
+    } catch (e) {
+      currentInput = 'Error';
+    }
+    operatorPressed = true;
+    updateDisplay();
+    return;
+  }
+  if (['+', '-', '*', '/'].includes(v)) {
+    if (operatorPressed && ['+', '-', '*', '/'].includes(currentInput.slice(-1))) {
+      currentInput = currentInput.slice(0, -1) + v;
+    } else {
+      currentInput += v;
+    }
+    operatorPressed = true;
+    updateDisplay();
+    return;
+  }
+  if (operatorPressed || currentInput === '0') {
+    currentInput = v === '.' ? '0.' : v;
+    operatorPressed = false;
+  } else {
+    if (v === '.') {
+      if (!currentInput.includes('.')) currentInput += '.';
+    } else {
+      currentInput += v;
+    }
+  }
+  updateDisplay();
 };
+
 document.querySelectorAll('.btn').forEach(btn => {
-btn.addEventListener('click', () => handleButton(btn.dataset.value));
+  btn.addEventListener('click', () => handleButton(btn.dataset.value));
 });
+
 updateDisplay();
 </script>
 </body>
