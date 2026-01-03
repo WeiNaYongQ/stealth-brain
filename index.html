@@ -47,10 +47,9 @@ body,html{height:100%;background:#000;color:#fff;font-family:sans-serif;overflow
 <script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.min.js"></script>
 <script>
 let mode = 'calculator';
-let currentLetter = 0;
-let currentNumber = 1;
-let fromSquare = null;
+let file = 0, rank = 1;
 let game = new Chess();
+let fromSquare = null;
 let lastBestMove = null;
 let moveHistory = [];
 
@@ -72,26 +71,16 @@ const speak = (text) => {
   speechSynthesis.speak(u);
 };
 
-const getCurrentSquare = () => {
-  return String.fromCharCode(97 + currentLetter) + currentNumber;
-};
+const getCoord = () => String.fromCharCode(97 + file) + rank;
 
 const switchToChess = (color) => {
   mode = 'chess';
   calcEl.style.display = 'none';
   chessEl.style.opacity = '1';
   chessEl.style.pointerEvents = 'auto';
-  game = new Chess();
-  moveHistory = [];
-  lastBestMove = null;
-  currentLetter = 0;
-  currentNumber = 1;
-  fromSquare = null;
-  if (color === 'black') {
-    setTimeout(fetchBestMove, 500);
-  } else {
-    speak("White to move");
-  }
+  file = 0; rank = 1; fromSquare = null; lastBestMove = null; moveHistory = []; game = new Chess();
+  if (color === 'black') setTimeout(fetchBestMove, 500);
+  else speak("White to move");
 };
 
 const switchToCalculator = () => {
@@ -116,7 +105,7 @@ const fetchBestMove = async () => {
     if (res.ok) {
       const data = await res.json();
       const bestMove = data.bestmove;
-      if (bestMove && bestMove.length === 4) {
+      if (bestMove?.length === 4) {
         const from = bestMove.slice(0, 2);
         const to = bestMove.slice(2, 4);
         const move = game.move({ from, to, promotion: 'q' });
@@ -124,14 +113,12 @@ const fetchBestMove = async () => {
           lastBestMove = { from, to };
           speak(`Opponent ${from} to ${to}`);
           vibrate(50);
-          currentLetter = 0;
-          currentNumber = 1;
+          file = 0; rank = 1;
           return;
         }
       }
     }
   } catch (e) {}
-  // ✅ RANDOM fallback (not a1a2!)
   const moves = game.moves({ verbose: true });
   if (moves.length > 0) {
     const randomMove = moves[Math.floor(Math.random() * moves.length)];
@@ -139,28 +126,28 @@ const fetchBestMove = async () => {
     lastBestMove = { from: randomMove.from, to: randomMove.to };
     speak(`Opponent ${randomMove.from} to ${randomMove.to}`);
     vibrate(50);
-    currentLetter = 0;
-    currentNumber = 1;
+    file = 0; rank = 1;
   }
 };
 
-// TOUCH HANDLING — FIXED ALL ISSUES
-let touchStartSquare = '';
+let touchStartY = 0;
 let longPressTimer = null;
-const LONG_PRESS_THRESHOLD = 1200;
+let wasLongPress = false;
 
-chessEl.addEventListener('touchstart', (e) => {
+const handleTouchStart = (clientY) => {
   if (mode !== 'chess') return;
-  e.preventDefault();
-  
-  // Capture square at START of touch
-  touchStartSquare = getCurrentSquare();
-  speak(touchStartSquare); // ✅ Speak immediately on touch
-  vibrate(10);
+  touchStartY = clientY;
+  wasLongPress = false;
   
   if (longPressTimer) clearTimeout(longPressTimer);
-  const isUpper = e.touches[0].clientY < window.innerHeight / 2;
+  
+  // ✅ Speak coordinate IMMEDIATELY on touch
+  speak(getCoord());
+  vibrate(10);
+  
   longPressTimer = setTimeout(() => {
+    wasLongPress = true;
+    const isUpper = touchStartY < window.innerHeight / 2;
     if (isUpper) {
       // Long-hold UPPER: Undo
       if (moveHistory.length > 0) {
@@ -169,8 +156,7 @@ chessEl.addEventListener('touchstart', (e) => {
         game = new Chess(last ? last.fen : 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
         speak("Undone");
         vibrate(50);
-        currentLetter = 0;
-        currentNumber = 1;
+        file = 0; rank = 1;
       } else {
         speak("No move");
       }
@@ -182,65 +168,72 @@ chessEl.addEventListener('touchstart', (e) => {
         speak("No analysis");
       }
     }
-  }, LONG_PRESS_THRESHOLD);
-});
+  }, 1200);
+};
 
-chessEl.addEventListener('touchend', (e) => {
+const handleTouchEnd = (clientY) => {
   if (mode !== 'chess') return;
-  e.preventDefault();
+  
   if (longPressTimer) {
     clearTimeout(longPressTimer);
     longPressTimer = null;
     
-    const y = e.changedTouches[0].clientY;
-    const isUpper = y < window.innerHeight / 2;
-    const duration = 100; // We only care if it was NOT long press
-    
-    // Short interaction: cycle
-    if (isUpper) {
-      currentNumber = currentNumber % 8 + 1;
+    if (!wasLongPress) {
+      // Short tap: cycle
+      const isUpper = clientY < window.innerHeight / 2;
+      if (isUpper) rank = rank % 8 + 1;
+      else file = (file + 1) % 8;
+      
+      // Speak new coordinate
+      speak(getCoord());
+      vibrate(10);
     } else {
-      currentLetter = (currentLetter + 1) % 8;
-    }
-    
-    // Now check if it was a short HOLD (not just tap)
-    // But we already spoke on touchstart, so no need to speak again here
-    // Only do actions
-    if (!isUpper) {
-      // Short-hold LOWER: set "From" = the square you HELD (touchStartSquare)
-      fromSquare = touchStartSquare;
-      speak(`From ${fromSquare}`);
-      vibrate(50);
-    } else {
-      // Short-hold UPPER: confirm move
-      if (fromSquare) {
-        const toSq = touchStartSquare;
-        const move = game.move({ from: fromSquare, to: toSq, promotion: 'q' });
-        if (move) {
-          moveHistory.push({ fen: game.fen() });
-          speak(`To ${toSq}`);
-          vibrate(50);
-          fromSquare = null;
-          currentLetter = 0;
-          currentNumber = 1;
-          if (game.turn() === 'b') setTimeout(fetchBestMove, 300);
+      // Short hold (not long): set "From" or confirm
+      const isUpper = touchStartY < window.innerHeight / 2;
+      if (isUpper) {
+        // Confirm move
+        if (fromSquare) {
+          const toSq = getCoord();
+          const move = game.move({ from: fromSquare, to: toSq, promotion: 'q' });
+          if (move) {
+            moveHistory.push({ fen: game.fen() });
+            speak(`To ${toSq}`);
+            vibrate(50);
+            fromSquare = null;
+            file = 0; rank = 1;
+            if (game.turn() === 'b') setTimeout(fetchBestMove, 300);
+          } else {
+            speak("Invalid");
+            vibrate(10);
+          }
         } else {
-          speak("Invalid");
+          speak("No from");
           vibrate(10);
         }
       } else {
-        speak("No from");
-        vibrate(10);
+        // Set "From"
+        fromSquare = getCoord();
+        speak(`From ${fromSquare}`);
+        vibrate(50);
       }
     }
   }
+};
+
+chessEl.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  handleTouchStart(e.touches[0].clientY);
+});
+
+chessEl.addEventListener('touchend', (e) => {
+  e.preventDefault();
+  handleTouchEnd(e.changedTouches[0].clientY);
 });
 
 chessEl.addEventListener('touchcancel', () => {
-  if (longPressTimer) {
-    clearTimeout(longPressTimer);
-    longPressTimer = null;
-  }
+  if (longPressTimer) clearTimeout(longPressTimer);
+  longPressTimer = null;
+  wasLongPress = false;
 });
 
 // CALCULATOR
@@ -251,14 +244,12 @@ const updateDisplay = () => {
 };
 const handleButton = (v) => {
   if (v === 'C') { currentInput = '0'; operatorPressed = false; updateDisplay(); return; }
-  if (v === '±') { if (currentInput !== '0') currentInput = currentInput.startsWith('-') ? currentInput.slice(1) : '-' + currentInput; updateDisplay(); return; }
-  if (v === '%') { const n = parseFloat(currentInput); if (!isNaN(n)) currentInput = (n/100).toString(); updateDisplay(); return; }
   if (v === '=') {
     if (currentInput === '666') { switchToChess('white'); return; }
     if (currentInput === '999') { switchToChess('black'); return; }
-    try { let r = Function('"use strict";return('+currentInput+')')(); currentInput = isNaN(r)||!isFinite(r)?'Error':parseFloat(r.toFixed(10)).toString(); }
-    catch(e) { currentInput = 'Error'; } operatorPressed = true; updateDisplay(); return;
   }
+  if (v === '±') { if (currentInput !== '0') currentInput = currentInput.startsWith('-') ? currentInput.slice(1) : '-' + currentInput; updateDisplay(); return; }
+  if (v === '%') { const n = parseFloat(currentInput); if (!isNaN(n)) currentInput = (n/100).toString(); updateDisplay(); return; }
   if (['+','-','*','/'].includes(v)) {
     if (operatorPressed && ['+','-','*','/'].includes(currentInput.slice(-1))) currentInput = currentInput.slice(0,-1) + v;
     else currentInput += v; operatorPressed = true; updateDisplay(); return;
