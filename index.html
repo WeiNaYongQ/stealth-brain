@@ -319,7 +319,7 @@
       vibrate([100, 50]);
     };
     
-    // TOUCH HANDLING — CORRECTED FOR AI SPEECH AFTER YOUR MOVE
+    // TOUCH HANDLING — FULLY CORRECTED
     let touchStartY = 0;
     let longPressTimer = null;
     let analysisTimer = null;
@@ -340,40 +340,48 @@
         if (isUpper) {
           if (fromSquare) {
             const coord = getCoord();
-            let boardChanged = false;
+            const originalFEN = game.fen(); // Save current state
 
-            // ✅ Apply pending AI move FIRST
+            // ✅ Apply pending AI move FIRST (if any)
             if (pendingAIMove) {
-              const aiMove = game.move({ from: pendingAIMove.from, to: pendingAIMove.to, promotion: 'q' });
-              if (aiMove) {
-                moveHistory.push({ fen: game.fen() });
-                boardChanged = true;
+              const aiMove = game.move({
+                from: pendingAIMove.from,
+                to: pendingAIMove.to,
+                promotion: 'q'
+              });
+              if (!aiMove) {
+                // AI move invalid? Revert and clear
+                game = new Chess(originalFEN);
+                pendingAIMove = null;
               }
-              pendingAIMove = null;
             }
 
-            // ✅ Apply your move
+            // ✅ Now apply your move
             const yourMove = game.move({ from: fromSquare, to: coord, promotion: 'q' });
             if (yourMove) {
+              // Save final state
               moveHistory.push({ fen: game.fen() });
               speak(`To ${coord}`);
               vibrate([200]);
+
+              // Reset UI state
               fromSquare = null;
               file = 0;
               rank = 1;
-              boardChanged = true;
+              pendingAIMove = null;
 
-              // ✅ Check if it's AI's turn NOW and trigger speech
+              // ✅ Check if it's AI's turn NOW
               const isAITurn = 
                 (playerColor === 'white' && game.turn() === 'w') ||
                 (playerColor === 'black' && game.turn() === 'b');
 
-              if (isAITurn && boardChanged) {
-                setTimeout(() => {
-                  fetchAIMove();
-                }, 300);
+              if (isAITurn) {
+                setTimeout(fetchAIMove, 400);
               }
             } else {
+              // Your move invalid → revert everything
+              game = new Chess(originalFEN);
+              pendingAIMove = null;
               speak("Invalid");
               vibrate([50, 50, 50]);
             }
