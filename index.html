@@ -94,8 +94,11 @@ const switchToCalculator = () => {
   updateDisplay();
 };
 
+// ✅ STRONG ENGINE — FIXED URL + SMART FALLBACK
 const fetchBestMove = async () => {
   speak("Thinking");
+  
+  // Try chess.swehosting.se (FIXED URL — no extra spaces)
   try {
     const res = await fetch('https://chess.swehosting.se/api/v1/', {
       method: 'POST',
@@ -119,15 +122,58 @@ const fetchBestMove = async () => {
       }
     }
   } catch (e) {}
+
+  // Fallback: Lichess Cloud Eval
+  try {
+    const fen = game.fen().replace(/\s+/g, '_');
+    const url = `https://lichess.org/api/cloud-eval?fen=${fen}&multiPv=3`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.pvs?.[0]?.moves) {
+        const firstMove = data.pvs[0].moves.split(' ')[0];
+        if (firstMove?.length === 4) {
+          const from = firstMove.slice(0, 2);
+          const to = firstMove.slice(2, 4);
+          const move = game.move({ from, to, promotion: 'q' });
+          if (move) {
+            lastBestMove = { from, to };
+            speak(`Opponent ${from} to ${to}`);
+            vibrate(50);
+            file = 0; rank = 1;
+            return;
+          }
+        }
+      }
+    }
+  } catch (e) {}
+
+  // Final fallback: SMART random move (avoid a1a2)
   const moves = game.moves({ verbose: true });
-  if (moves.length > 0) {
-    const randomMove = moves[Math.floor(Math.random() * moves.length)];
-    game.move(randomMove);
-    lastBestMove = { from: randomMove.from, to: randomMove.to };
-    speak(`Opponent ${randomMove.from} to ${randomMove.to}`);
-    vibrate(50);
-    file = 0; rank = 1;
-  }
+  if (moves.length === 0) return;
+
+  const scored = moves.map(m => {
+    let score = 0;
+    const toFile = m.to.charCodeAt(0) - 97; // 0-7
+    const toRank = parseInt(m.to[1]);
+    // Bonus for center
+    if (toFile >= 2 && toFile <= 5 && toRank >= 3 && toRank <= 6) score += 3;
+    // Bonus for developing minor pieces
+    if (m.piece === 'n' || m.piece === 'b') score += 2;
+    // Penalty for edge pawn pushes
+    if ((m.from === 'a2' || m.from === 'h2' || m.from === 'a7' || m.from === 'h7') && m.piece === 'p') score -= 5;
+    return { move: m, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  const topMoves = scored.slice(0, Math.min(3, scored.length));
+  const chosen = topMoves[Math.floor(Math.random() * topMoves.length)];
+
+  game.move(chosen.move);
+  lastBestMove = { from: chosen.move.from, to: chosen.move.to };
+  speak(`Opponent ${chosen.move.from} to ${chosen.move.to}`);
+  vibrate(50);
+  file = 0; rank = 1;
 };
 
 let touchStartY = 0;
