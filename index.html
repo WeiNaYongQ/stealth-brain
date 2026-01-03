@@ -47,8 +47,8 @@ body,html{height:100%;background:#000;color:#fff;font-family:sans-serif;overflow
 <script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.min.js"></script>
 <script>
 let mode = 'calculator';
-let currentLetter = 0;
-let currentNumber = 1;
+let currentLetter = 0; // a=0
+let currentNumber = 1; // 1-8
 let fromSquare = null;
 let game = new Chess();
 let lastBestMove = null;
@@ -72,6 +72,10 @@ const speak = (text) => {
   speechSynthesis.speak(u);
 };
 
+const getCurrentSquare = () => {
+  return String.fromCharCode(97 + currentLetter) + currentNumber;
+};
+
 const switchToChess = (color) => {
   mode = 'chess';
   calcEl.style.display = 'none';
@@ -80,7 +84,9 @@ const switchToChess = (color) => {
   game = new Chess();
   moveHistory = [];
   lastBestMove = null;
-  resetInputCycle();
+  currentLetter = 0;
+  currentNumber = 1;
+  fromSquare = null;
   if (color === 'black') {
     setTimeout(fetchBestMove, 500);
   } else {
@@ -97,11 +103,6 @@ const switchToCalculator = () => {
   currentInput = '0';
   operatorPressed = false;
   updateDisplay();
-};
-
-const resetInputCycle = () => {
-  currentLetter = 0;
-  currentNumber = 1;
 };
 
 const fetchBestMove = async () => {
@@ -123,7 +124,8 @@ const fetchBestMove = async () => {
           lastBestMove = { from, to };
           speak(`Opponent ${from} to ${to}`);
           vibrate(50);
-          resetInputCycle();
+          currentLetter = 0;
+          currentNumber = 1;
           return;
         }
       }
@@ -136,11 +138,12 @@ const fetchBestMove = async () => {
     lastBestMove = { from: move.from, to: move.to };
     speak(`Opponent ${move.from} to ${move.to}`);
     vibrate(50);
-    resetInputCycle();
+    currentLetter = 0;
+    currentNumber = 1;
   }
 };
 
-// ✅ FIXED TOUCH HANDLING — SPEECH ON touchend
+// TOUCH HANDLING
 let touchStartTime = 0;
 let longPressTimer = null;
 const LONG_PRESS_THRESHOLD = 1200;
@@ -150,50 +153,78 @@ chessEl.addEventListener('touchstart', (e) => {
   e.preventDefault();
   touchStartTime = Date.now();
   if (longPressTimer) clearTimeout(longPressTimer);
-  
-  longPressTimer = setTimeout(() => {
-    const y = e.touches[0].clientY;
-    const isUpper = y < window.innerHeight / 2;
-    if (isUpper) {
-      if (moveHistory.length > 0) {
-        moveHistory.pop();
-        const last = moveHistory[moveHistory.length - 1];
-        game = new Chess(last ? last.fen : 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
-        speak("Undone");
-        vibrate(50);
-        resetInputCycle();
-      } else {
-        speak("No move");
-      }
-    } else {
-      if (lastBestMove) {
-        speak(`Best: ${lastBestMove.from} to ${lastBestMove.to}`);
-      } else {
-        speak("No best move");
-      }
-    }
-  }, LONG_PRESS_THRESHOLD);
 });
 
 chessEl.addEventListener('touchend', (e) => {
   if (mode !== 'chess') return;
   e.preventDefault();
   const duration = Date.now() - touchStartTime;
-  if (longPressTimer) {
-    clearTimeout(longPressTimer);
-    longPressTimer = null;
-  }
-  if (duration < LONG_PRESS_THRESHOLD - 100) {
-    const y = e.changedTouches[0].clientY;
-    const isUpper = y < window.innerHeight / 2;
+  const y = e.changedTouches[0].clientY;
+  const isUpper = y < window.innerHeight / 2;
+
+  if (duration >= LONG_PRESS_THRESHOLD - 100) {
+    // Long press
     if (isUpper) {
-      speak(currentNumber.toString());
-      vibrate(10);
+      // Long-hold UPPER: Undo
+      if (moveHistory.length > 0) {
+        moveHistory.pop();
+        const last = moveHistory[moveHistory.length - 1];
+        game = new Chess(last ? last.fen : 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+        speak("Undone");
+        vibrate(50);
+        currentLetter = 0;
+        currentNumber = 1;
+      } else {
+        speak("No move");
+      }
+    } else {
+      // Long-hold LOWER: Analysis
+      if (lastBestMove) {
+        speak(`Best move: ${lastBestMove.from} to ${lastBestMove.to}`);
+      } else {
+        speak("No analysis");
+      }
+    }
+  } else {
+    // Short tap or short hold
+    if (isUpper) {
+      // Tap/short-hold UPPER: cycle number
       currentNumber = currentNumber % 8 + 1;
     } else {
-      speak(String.fromCharCode(97 + currentLetter));
-      vibrate(10);
+      // Tap/short-hold LOWER: cycle letter
       currentLetter = (currentLetter + 1) % 8;
+    }
+    // Always speak full current square
+    const sq = getCurrentSquare();
+    speak(sq);
+    vibrate(10);
+
+    // If it was a short HOLD (not just tap), and on LOWER, set "From"
+    if (duration > 300 && !isUpper) {
+      fromSquare = sq;
+      speak(`From ${sq}`);
+      vibrate(50);
+    } else if (duration > 300 && isUpper) {
+      // Short-hold UPPER: confirm move
+      if (fromSquare) {
+        const toSq = sq;
+        const move = game.move({ from: fromSquare, to: toSq, promotion: 'q' });
+        if (move) {
+          moveHistory.push({ fen: game.fen() });
+          speak(`To ${toSq}`);
+          vibrate(50);
+          fromSquare = null;
+          currentLetter = 0;
+          currentNumber = 1;
+          if (game.turn() === 'b') setTimeout(fetchBestMove, 300);
+        } else {
+          speak("Invalid");
+          vibrate(10);
+        }
+      } else {
+        speak("No from");
+        vibrate(10);
+      }
     }
   }
 });
