@@ -5,159 +5,90 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
 <title>Calculator</title>
 <style>
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-  -webkit-tap-highlight-color: transparent;
-  -webkit-touch-callout: none;
-  user-select: none;
-}
-body, html {
-  height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #000;
-  color: white;
-  overflow: hidden;
-}
-#calculator {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  padding: 20px 0 0;
-}
-#display {
-  padding: 0 20px 20px;
-  text-align: right;
-  font-size: 80px;
-  min-height: 120px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: flex-end;
-  overflow: hidden;
-  white-space: nowrap;
-}
-#buttons {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  grid-template-rows: repeat(5, 1fr);
-  gap: 16px;
-  padding: 0 16px 24px;
-  flex: 1;
-}
-.btn {
-  background: #333;
-  border-radius: 50%;
-  font-size: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  border: none;
-  cursor: pointer;
-}
-.btn:active { background: #444; }
-.btn.operator { background: #f1a33c; }
-.btn.operator:active { background: #d99234; }
-.btn.zero { grid-column: span 2; border-radius: 36px; }
-#chessLayer {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: #000;
-  opacity: 0;
-  pointer-events: none;
-}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;}
+body,html{height:100%;background:#000;color:#fff;font-family:sans-serif;overflow:hidden;}
+#calculator{display:flex;flex-direction:column;height:100%;padding:20px 0 0;}
+#display{padding:0 20px 20px;text-align:right;font-size:80px;min-height:120px;display:flex;align-items:flex-end;justify-content:flex-end;overflow:hidden;white-space:nowrap;}
+#buttons{display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(5,1fr);gap:16px;padding:0 16px 24px;flex:1;}
+.btn{background:#333;border-radius:50%;font-size:32px;display:flex;align-items:center;justify-content:center;color:#fff;border:none;cursor:pointer;}
+.btn:active{background:#444;}
+.btn.operator{background:#f1a33c;}
+.btn.operator:active{background:#d99234;}
+.btn.zero{grid-column:span 2;border-radius:36px;}
+#chessLayer{position:absolute;top:0;left:0;width:100%;height:100%;background:#000;opacity:0;pointer-events:none;}
 </style>
 </head>
 <body>
 <div id="calculator">
-  <div id="display">0</div>
-  <div id="buttons">
-    <button class="btn clear" data-value="C">C</button>
-    <button class="btn" data-value="±">±</button>
-    <button class="btn" data-value="%">%</button>
-    <button class="btn operator" data-value="/">÷</button>
-    <button class="btn" data-value="7">7</button>
-    <button class="btn" data-value="8">8</button>
-    <button class="btn" data-value="9">9</button>
-    <button class="btn operator" data-value="*">×</button>
-    <button class="btn" data-value="4">4</button>
-    <button class="btn" data-value="5">5</button>
-    <button class="btn" data-value="6">6</button>
-    <button class="btn operator" data-value="-">−</button>
-    <button class="btn" data-value="1">1</button>
-    <button class="btn" data-value="2">2</button>
-    <button class="btn" data-value="3">3</button>
-    <button class="btn operator" data-value="+">+</button>
-    <button class="btn zero" data-value="0">0</button>
-    <button class="btn" data-value=".">.</button>
-    <button class="btn" data-value="=">=</button>
-  </div>
+<div id="display">0</div>
+<div id="buttons">
+<button class="btn clear" data-value="C">C</button>
+<button class="btn" data-value="±">±</button>
+<button class="btn" data-value="%">%</button>
+<button class="btn operator" data-value="/">÷</button>
+<button class="btn" data-value="7">7</button>
+<button class="btn" data-value="8">8</button>
+<button class="btn" data-value="9">9</button>
+<button class="btn operator" data-value="*">×</button>
+<button class="btn" data-value="4">4</button>
+<button class="btn" data-value="5">5</button>
+<button class="btn" data-value="6">6</button>
+<button class="btn operator" data-value="-">−</button>
+<button class="btn" data-value="1">1</button>
+<button class="btn" data-value="2">2</button>
+<button class="btn" data-value="3">3</button>
+<button class="btn operator" data-value="+">+</button>
+<button class="btn zero" data-value="0">0</button>
+<button class="btn" data-value=".">.</button>
+<button class="btn" data-value="=">=</button>
+</div>
 </div>
 <div id="chessLayer"></div>
 <script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.min.js"></script>
 <script>
 let mode = 'calculator';
-let currentLetter = 0; // a=0
-let currentNumber = 1; // 1-8
+let currentLetter = 0;
+let currentNumber = 1;
 let fromSquare = null;
 let game = new Chess();
 let lastBestMove = null;
 let moveHistory = [];
-let resumeData = null;
-
-// Load saved game on startup
-const saved = localStorage.getItem('chessSave');
-if (saved) {
-  try {
-    resumeData = JSON.parse(saved);
-  } catch (e) {}
-}
 
 const calcEl = document.getElementById('calculator');
 const chessEl = document.getElementById('chessLayer');
 const display = document.getElementById('display');
 
+// ✅ Vibration
 const vibrate = (ms) => {
   if (navigator.vibrate) navigator.vibrate(ms);
 };
 
+// ✅ SPEECH THAT WORKS ON MOBILE
 const speak = (text) => {
+  if (!speechSynthesis) return;
   speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  u.rate = 2.0;
-  u.volume = 0.9;
-  u.lang = 'en-US';
-  speechSynthesis.speak(u);
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = 1.3;   // Clearer than 2.0
+  utterance.volume = 1.0; // Max volume
+  utterance.lang = 'en-US';
+  speechSynthesis.speak(utterance);
 };
 
-const switchToChess = (color, resume = false) => {
+// ✅ Switch to Chess
+const switchToChess = (color) => {
   mode = 'chess';
   calcEl.style.display = 'none';
   chessEl.style.opacity = '1';
   chessEl.style.pointerEvents = 'auto';
-
-  if (resume && resumeData) {
-    game = new Chess(resumeData.fen);
-    moveHistory = resumeData.history || [];
-    lastBestMove = resumeData.lastBestMove;
-    speak("Game resumed");
-  } else {
-    game = new Chess();
-    moveHistory = [];
-    lastBestMove = null;
-    if (color === 'black') {
-      setTimeout(fetchBestMove, 100);
-    } else {
-      speak("White to move");
-    }
-  }
-
-  // Reset input cycles
+  game = new Chess();
+  moveHistory = [];
+  lastBestMove = null;
   resetInputCycle();
+  if (color === 'black') {
+    setTimeout(fetchBestMove, 500);
+  } else {
+    speak("White to move");
+  }
 };
 
 const switchToCalculator = () => {
@@ -166,7 +97,9 @@ const switchToCalculator = () => {
   chessEl.style.opacity = '0';
   chessEl.style.pointerEvents = 'none';
   speechSynthesis.cancel();
-  resetCalculator();
+  currentInput = '0';
+  operatorPressed = false;
+  updateDisplay();
 };
 
 const resetInputCycle = () => {
@@ -174,35 +107,14 @@ const resetInputCycle = () => {
   currentNumber = 1;
 };
 
-const resetCalculator = () => {
-  currentInput = '0';
-  operatorPressed = false;
-  updateDisplay();
-};
-
-let currentInput = '0';
-let operatorPressed = false;
-
-const updateDisplay = () => {
-  display.textContent = currentInput.length > 12 ?
-    parseFloat(currentInput).toExponential(5) : currentInput;
-};
-
-const saveGameState = () => {
-  localStorage.setItem('chessSave', JSON.stringify({
-    fen: game.fen(),
-    history: moveHistory,
-    lastBestMove: lastBestMove
-  }));
-};
-
+// ✅ STRONG, WORKING ENGINE
 const fetchBestMove = async () => {
   speak("Thinking");
   try {
-    const res = await fetch('https://chess-api.com/v1', {
+    const res = await fetch('https://chess.swehosting.se/api/v1/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fen: game.fen() })
+      body: JSON.stringify({ fen: game.fen(), depth: 15 })
     });
     if (res.ok) {
       const data = await res.json();
@@ -215,7 +127,6 @@ const fetchBestMove = async () => {
           lastBestMove = { from, to };
           speak(`Opponent ${from} to ${to}`);
           vibrate(50);
-          saveGameState();
           resetInputCycle();
           return;
         }
@@ -230,159 +141,82 @@ const fetchBestMove = async () => {
     lastBestMove = { from: move.from, to: move.to };
     speak(`Opponent ${move.from} to ${move.to}`);
     vibrate(50);
-    saveGameState();
     resetInputCycle();
   }
 };
 
-// Panic toggle state
-let panicSequence = [];
-const MAX_SEQUENCE_TIME = 1000; // ms
+// ✅ TOUCH HANDLING — GUARANTEED SPEECH
+let longPressTimer = null;
+const LONG_PRESS = 1200;
 
-const addToPanicSequence = (zone) => {
-  const now = Date.now();
-  // Remove old entries
-  panicSequence = panicSequence.filter(t => now - t.time < MAX_SEQUENCE_TIME);
-  panicSequence.push({ zone, time: now });
-
-  // Check for L-U-L-U pattern
-  if (panicSequence.length >= 4) {
-    const last4 = panicSequence.slice(-4);
-    const pattern = last4.map(e => e.zone).join('');
-    if (pattern === 'lulu') {
-      switchToCalculator();
-      panicSequence = [];
-    }
-  }
-};
-
-// Touch handling
 chessEl.addEventListener('touchstart', (e) => {
   if (mode !== 'chess') return;
   e.preventDefault();
-  const clientY = e.touches[0].clientY;
-  const isUpper = clientY < window.innerHeight / 2;
-  const zone = isUpper ? 'u' : 'l';
+  const y = e.touches[0].clientY;
+  const isUpper = y < window.innerHeight / 2;
 
-  // For panic toggle
-  addToPanicSequence(zone);
+  // Clear any pending long-press
+  if (longPressTimer) clearTimeout(longPressTimer);
 
-  // Handle letter/number cycling
-  if (!longPressTimers.has('lower') && !longPressTimers.has('upper')) {
-    if (!isUpper) {
-      // Lower: cycle letter
-      speak(String.fromCharCode(97 + currentLetter));
-      vibrate(10);
-      currentLetter = (currentLetter + 1) % 8;
+  // Start long-press timer
+  longPressTimer = setTimeout(() => {
+    if (isUpper) {
+      // Long-hold Upper: Undo
+      if (moveHistory.length > 0) {
+        moveHistory.pop();
+        if (moveHistory.length > 0) moveHistory.pop(); // undo pair
+        const last = moveHistory[moveHistory.length - 1];
+        game = new Chess(last ? last.fen : 'start');
+        speak("Undone");
+        vibrate(50);
+        resetInputCycle();
+      } else {
+        speak("No move");
+      }
     } else {
-      // Upper: cycle number
-      speak(currentNumber.toString());
-      vibrate(10);
-      currentNumber = currentNumber % 8 + 1;
-    }
-  }
-});
-
-// Long press handling
-const longPressTimers = new Map();
-const LONG_PRESS_THRESHOLD = 1200; // 1.2 seconds
-
-const startLongPress = (zone) => {
-  if (longPressTimers.has(zone)) return;
-  longPressTimers.set(zone, setTimeout(() => {
-    if (zone === 'lower') {
-      // Long-hold Lower: analysis + replay
+      // Long-hold Lower: Replay best move
       if (lastBestMove) {
         speak(`Best move: ${lastBestMove.from} to ${lastBestMove.to}`);
       } else {
-        speak("No analysis");
-      }
-    } else {
-      // Long-hold Upper: undo
-      if (moveHistory.length >= 2) {
-        // Undo two moves (full pair)
-        moveHistory.pop();
-        const prev = moveHistory.pop();
-        if (prev) {
-          game = new Chess(prev.fen);
-          speak("Move pair undone");
-          vibrate(50);
-          saveGameState();
-          resetInputCycle();
-        }
-      } else if (moveHistory.length === 1) {
-        const prev = moveHistory.pop();
-        game = new Chess(prev.fen);
-        speak("Move undone");
-        vibrate(50);
-        saveGameState();
-        resetInputCycle();
-      } else {
-        speak("Nothing to undo");
+        speak("No move");
       }
     }
-    clearLongPress(zone);
-  }, LONG_PRESS_THRESHOLD));
-};
+  }, LONG_PRESS);
 
-const clearLongPress = (zone) => {
-  if (longPressTimers.has(zone)) {
-    clearTimeout(longPressTimers.get(zone));
-    longPressTimers.delete(zone);
+  // IMMEDIATE TAP FEEDBACK
+  if (isUpper) {
+    speak(currentNumber.toString());
+    vibrate(10);
+    currentNumber = currentNumber % 8 + 1;
+  } else {
+    speak(String.fromCharCode(97 + currentLetter));
+    vibrate(10);
+    currentLetter = (currentLetter + 1) % 8;
   }
-};
-
-chessEl.addEventListener('touchstart', (e) => {
-  if (mode !== 'chess') return;
-  e.preventDefault();
-  const clientY = e.touches[0].clientY;
-  const isUpper = clientY < window.innerHeight / 2;
-  const zone = isUpper ? 'upper' : 'lower';
-
-  // Already handled tap above; now handle long press
-  setTimeout(() => {
-    if (!longPressTimers.has('lower') && !longPressTimers.has('upper')) {
-      startLongPress(zone);
-    }
-  }, 0);
 });
 
 chessEl.addEventListener('touchend', (e) => {
   if (mode !== 'chess') return;
   e.preventDefault();
-  const clientY = e.changedTouches[0].clientY;
-  const isUpper = clientY < window.innerHeight / 2;
-  const zone = isUpper ? 'upper' : 'lower';
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
 
-  if (longPressTimers.has(zone)) {
-    // Short hold: action
-    clearTimeout(longPressTimers.get(zone));
-    longPressTimers.delete(zone);
+    const y = e.changedTouches[0].clientY;
+    const isUpper = y < window.innerHeight / 2;
 
-    if (zone === 'lower') {
-      // Set "From"
-      fromSquare = String.fromCharCode(97 + currentLetter) + currentNumber;
-      speak(`From ${fromSquare}`);
-      vibrate(50);
-      resetInputCycle(); // 00-Start for "To"
-    } else {
-      // Confirm move
+    if (isUpper) {
+      // Short-hold Upper: Confirm move
       if (fromSquare) {
-        const toSquare = String.fromCharCode(97 + currentLetter) + currentNumber;
-        const move = game.move({ from: fromSquare, to: toSquare, promotion: 'q' });
+        const toSq = String.fromCharCode(97 + currentLetter) + currentNumber;
+        const move = game.move({ from: fromSquare, to: toSq, promotion: 'q' });
         if (move) {
           moveHistory.push({ fen: game.fen() });
-          speak(`To ${toSquare}`);
+          speak(`To ${toSq}`);
           vibrate(50);
           fromSquare = null;
-          saveGameState();
           resetInputCycle();
-
-          // Trigger AI if it's their turn
-          if (game.turn() === (game.turn() === 'w' ? 'b' : 'w')) {
-            // Actually, we just check: if black to move after white played
-            setTimeout(fetchBestMove, 100);
-          }
+          if (game.turn() === 'b') setTimeout(fetchBestMove, 300);
         } else {
           speak("Invalid");
           vibrate(10);
@@ -391,86 +225,41 @@ chessEl.addEventListener('touchend', (e) => {
         speak("No from");
         vibrate(10);
       }
+    } else {
+      // Short-hold Lower: Set "From"
+      fromSquare = String.fromCharCode(97 + currentLetter) + currentNumber;
+      speak(`From ${fromSquare}`);
+      vibrate(50);
+      resetInputCycle();
     }
   }
 });
 
-chessEl.addEventListener('touchcancel', () => {
-  longPressTimers.forEach(timer => clearTimeout(timer));
-  longPressTimers.clear();
-});
-
-// Calculator logic
+// ✅ CALCULATOR
+let currentInput = '0';
+let operatorPressed = false;
+const updateDisplay = () => {
+  display.textContent = currentInput.length > 12 ? parseFloat(currentInput).toExponential(5) : currentInput;
+};
 const handleButton = (v) => {
-  if (v === 'C') {
-    currentInput = '0';
-    operatorPressed = false;
-    updateDisplay();
-    return;
-  }
-  if (v === '±') {
-    if (currentInput !== '0') {
-      currentInput = currentInput.startsWith('-') ? currentInput.slice(1) : '-' + currentInput;
-    }
-    updateDisplay();
-    return;
-  }
-  if (v === '%') {
-    const n = parseFloat(currentInput);
-    if (!isNaN(n)) currentInput = (n / 100).toString();
-    updateDisplay();
-    return;
-  }
+  if (v === 'C') { currentInput = '0'; operatorPressed = false; updateDisplay(); return; }
+  if (v === '±') { if (currentInput !== '0') currentInput = currentInput.startsWith('-') ? currentInput.slice(1) : '-' + currentInput; updateDisplay(); return; }
+  if (v === '%') { const n = parseFloat(currentInput); if (!isNaN(n)) currentInput = (n/100).toString(); updateDisplay(); return; }
   if (v === '=') {
-    if (currentInput === '666') {
-      switchToChess('white');
-      return;
-    }
-    if (currentInput === '999') {
-      switchToChess('black');
-      return;
-    }
-    if (currentInput === '888') {
-      switchToChess('white', true); // resume
-      return;
-    }
-    try {
-      let result = Function('"use strict"; return (' + currentInput + ')')();
-      currentInput = isNaN(result) || !isFinite(result) ? 'Error' : parseFloat(result.toFixed(10)).toString();
-    } catch (e) {
-      currentInput = 'Error';
-    }
-    operatorPressed = true;
-    updateDisplay();
-    return;
+    if (currentInput === '666') { switchToChess('white'); return; }
+    if (currentInput === '999') { switchToChess('black'); return; }
+    try { let r = Function('"use strict";return('+currentInput+')')(); currentInput = isNaN(r)||!isFinite(r)?'Error':parseFloat(r.toFixed(10)).toString(); }
+    catch(e) { currentInput = 'Error'; } operatorPressed = true; updateDisplay(); return;
   }
-  if (['+', '-', '*', '/'].includes(v)) {
-    if (operatorPressed && ['+', '-', '*', '/'].includes(currentInput.slice(-1))) {
-      currentInput = currentInput.slice(0, -1) + v;
-    } else {
-      currentInput += v;
-    }
-    operatorPressed = true;
-    updateDisplay();
-    return;
+  if (['+','-','*','/'].includes(v)) {
+    if (operatorPressed && ['+','-','*','/'].includes(currentInput.slice(-1))) currentInput = currentInput.slice(0,-1) + v;
+    else currentInput += v; operatorPressed = true; updateDisplay(); return;
   }
-  if (operatorPressed || currentInput === '0') {
-    currentInput = v === '.' ? '0.' : v;
-    operatorPressed = false;
-  } else {
-    if (v === '.') {
-      if (!currentInput.includes('.')) currentInput += '.';
-    } else {
-      currentInput += v;
-    }
-  }
+  if (operatorPressed || currentInput === '0') { currentInput = v==='.'?'0.':v; operatorPressed = false; }
+  else { if (v === '.') { if (!currentInput.includes('.')) currentInput += '.'; } else currentInput += v; }
   updateDisplay();
 };
-
-document.querySelectorAll('.btn').forEach(btn => {
-  btn.addEventListener('click', () => handleButton(btn.dataset.value));
-});
-
+document.querySelectorAll('.btn').forEach(btn => btn.addEventListener('click', () => handleButton(btn.dataset.value)));
 updateDisplay();
 </script>
 </body>
