@@ -47,8 +47,8 @@ body,html{height:100%;background:#000;color:#fff;font-family:sans-serif;overflow
 <script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.min.js"></script>
 <script>
 let mode = 'calculator';
-let currentLetter = 0; // a=0
-let currentNumber = 1; // 1-8
+let currentLetter = 0;
+let currentNumber = 1;
 let fromSquare = null;
 let game = new Chess();
 let lastBestMove = null;
@@ -131,39 +131,36 @@ const fetchBestMove = async () => {
       }
     }
   } catch (e) {}
+  // ✅ RANDOM fallback (not a1a2!)
   const moves = game.moves({ verbose: true });
   if (moves.length > 0) {
-    const move = moves[0];
-    game.move(move);
-    lastBestMove = { from: move.from, to: move.to };
-    speak(`Opponent ${move.from} to ${move.to}`);
+    const randomMove = moves[Math.floor(Math.random() * moves.length)];
+    game.move(randomMove);
+    lastBestMove = { from: randomMove.from, to: randomMove.to };
+    speak(`Opponent ${randomMove.from} to ${randomMove.to}`);
     vibrate(50);
     currentLetter = 0;
     currentNumber = 1;
   }
 };
 
-// TOUCH HANDLING
-let touchStartTime = 0;
+// TOUCH HANDLING — FIXED ALL ISSUES
+let touchStartSquare = '';
 let longPressTimer = null;
 const LONG_PRESS_THRESHOLD = 1200;
 
 chessEl.addEventListener('touchstart', (e) => {
   if (mode !== 'chess') return;
   e.preventDefault();
-  touchStartTime = Date.now();
+  
+  // Capture square at START of touch
+  touchStartSquare = getCurrentSquare();
+  speak(touchStartSquare); // ✅ Speak immediately on touch
+  vibrate(10);
+  
   if (longPressTimer) clearTimeout(longPressTimer);
-});
-
-chessEl.addEventListener('touchend', (e) => {
-  if (mode !== 'chess') return;
-  e.preventDefault();
-  const duration = Date.now() - touchStartTime;
-  const y = e.changedTouches[0].clientY;
-  const isUpper = y < window.innerHeight / 2;
-
-  if (duration >= LONG_PRESS_THRESHOLD - 100) {
-    // Long press
+  const isUpper = e.touches[0].clientY < window.innerHeight / 2;
+  longPressTimer = setTimeout(() => {
     if (isUpper) {
       // Long-hold UPPER: Undo
       if (moveHistory.length > 0) {
@@ -185,29 +182,39 @@ chessEl.addEventListener('touchend', (e) => {
         speak("No analysis");
       }
     }
-  } else {
-    // Short tap or short hold
+  }, LONG_PRESS_THRESHOLD);
+});
+
+chessEl.addEventListener('touchend', (e) => {
+  if (mode !== 'chess') return;
+  e.preventDefault();
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+    
+    const y = e.changedTouches[0].clientY;
+    const isUpper = y < window.innerHeight / 2;
+    const duration = 100; // We only care if it was NOT long press
+    
+    // Short interaction: cycle
     if (isUpper) {
-      // Tap/short-hold UPPER: cycle number
       currentNumber = currentNumber % 8 + 1;
     } else {
-      // Tap/short-hold LOWER: cycle letter
       currentLetter = (currentLetter + 1) % 8;
     }
-    // Always speak full current square
-    const sq = getCurrentSquare();
-    speak(sq);
-    vibrate(10);
-
-    // If it was a short HOLD (not just tap), and on LOWER, set "From"
-    if (duration > 300 && !isUpper) {
-      fromSquare = sq;
-      speak(`From ${sq}`);
+    
+    // Now check if it was a short HOLD (not just tap)
+    // But we already spoke on touchstart, so no need to speak again here
+    // Only do actions
+    if (!isUpper) {
+      // Short-hold LOWER: set "From" = the square you HELD (touchStartSquare)
+      fromSquare = touchStartSquare;
+      speak(`From ${fromSquare}`);
       vibrate(50);
-    } else if (duration > 300 && isUpper) {
+    } else {
       // Short-hold UPPER: confirm move
       if (fromSquare) {
-        const toSq = sq;
+        const toSq = touchStartSquare;
         const move = game.move({ from: fromSquare, to: toSq, promotion: 'q' });
         if (move) {
           moveHistory.push({ fen: game.fen() });
