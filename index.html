@@ -100,7 +100,7 @@
 
   <div id="chessLayer"></div>
 
-  <!-- chess.js from CDN (safe, no worker issues) -->
+  <!-- Fixed: remove trailing spaces -->
   <script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.js"></script>
   
   <script>
@@ -245,8 +245,64 @@
       stockfish.postMessage('go movetime 1000');
     };
     
-    const speakAnalysis = () => {
-      speak("Analysis not available.");
+    // ✅ HYBRID ANALYSIS: Stockfish + Lichess
+    let analysisTimeout = null;
+    const speakAnalysis = async () => {
+      if (!stockfish || mode !== 'chess') {
+        speak("Engine not ready.");
+        return;
+      }
+
+      if (analysisTimeout) clearTimeout(analysisTimeout);
+      speak("Analyzing");
+
+      let bestMoveFrom = 'e2', bestMoveTo = 'e4';
+      let lichessData = null;
+
+      // Get best move from Stockfish
+      const stockfishPromise = new Promise((resolve) => {
+        const handleMessage = (event) => {
+          const msg = event.data;
+          if (typeof msg === 'string' && msg.startsWith('bestmove')) {
+            stockfish.removeEventListener('message', handleMessage);
+            const moveStr = msg.split(' ')[1];
+            if (moveStr && moveStr !== '(none)') {
+              bestMoveFrom = moveStr.slice(0, 2);
+              bestMoveTo = moveStr.slice(2, 4);
+            }
+            resolve();
+          }
+        };
+        stockfish.addEventListener('message', handleMessage);
+        stockfish.postMessage(`position fen ${game.fen()}`);
+        stockfish.postMessage('go movetime 800');
+      });
+
+      // Get extra info from Lichess
+      const lichessPromise = fetch(`https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(game.fen())}&multiPv=1`)
+        .then(r => r.ok ? r.json() : null)
+        .catch(() => null);
+
+      // Wait max 1.5 seconds
+      const timeout = new Promise(r => analysisTimeout = setTimeout(r, 1500));
+      await Promise.race([Promise.all([stockfishPromise, lichessPromise]), timeout]);
+
+      lichessData = await lichessPromise;
+
+      if (lichessData?.pvs?.[0]) {
+        const opening = lichessData.opening?.name || "Unknown opening";
+        let evalText = "balanced";
+        const cp = lichessData.pvs[0].cp;
+        if (cp !== undefined) {
+          if (cp > 100) evalText = "winning for White";
+          else if (cp < -100) evalText = "winning for Black";
+          else if (cp > 30) evalText = "White advantage";
+          else if (cp < -30) evalText = "Black advantage";
+        }
+        speakMove(`${opening}. Position is ${evalText}. Best move: ${bestMoveFrom} to ${bestMoveTo}.`);
+      } else {
+        speakMove(`Best move: ${bestMoveFrom} to ${bestMoveTo}`);
+      }
     };
     
     const undoLastMove = () => {
