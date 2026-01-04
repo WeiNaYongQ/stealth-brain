@@ -109,6 +109,7 @@
     let fromSquare = null;
     let playerColor = 'white';
     let lastAIMove = null;
+    let lastAIMoveColor = null; // ✅ NEW: store engine's side
     let lastOpponentMove = null;
     let moveHistory = [];
     let currentInput = '0';
@@ -173,11 +174,16 @@
           if (moveStr && moveStr !== '(none)') {
             const from = moveStr.slice(0, 2);
             const to = moveStr.slice(2, 4);
+
+            // ✅ DETERMINE ENGINE COLOR BEFORE MAKING THE MOVE
+            const engineColor = game.turn() === 'w' ? 'White' : 'Black';
+
             const move = game.move({ from, to, promotion: 'q' });
             if (move) {
               lastAIMove = { from, to };
+              lastAIMoveColor = engineColor; // ✅ STORE CORRECT COLOR
               lastOpponentMove = { from, to };
-              speakMove(`Opponent ${from} to ${to}`);
+              speakMove(`${engineColor} move ${from} to ${to}`);
               vibrate([100]);
             }
           }
@@ -200,6 +206,7 @@
       rank = 1;
       fromSquare = null;
       lastAIMove = null;
+      lastAIMoveColor = null; // ✅ reset
       lastOpponentMove = null;
       moveHistory = [];
       game = new Chess();
@@ -241,7 +248,7 @@
       stockfish.postMessage('go movetime 1000');
     };
     
-    // ✅ FIXED: Use Stockfish eval + Lichess opening name
+    // ✅ CORRECTED: Uses stored lastAIMoveColor — no guessing!
     const speakAnalysis = () => {
       if (mode !== 'chess' || !stockfish) {
         speak("Engine not ready.");
@@ -254,22 +261,7 @@
       }
 
       const { from, to } = lastAIMove;
-
-      // Determine mover color
-      let moverColor = 'White';
-      try {
-        const history = game.history({ verbose: true });
-        if (history.length > 0) {
-          const lastMove = history[history.length - 1];
-          if (lastMove.from === from && lastMove.to === to) {
-            moverColor = lastMove.color === 'w' ? 'White' : 'Black';
-          } else {
-            moverColor = (parseInt(to[1]) > parseInt(from[1])) ? 'White' : 'Black';
-          }
-        }
-      } catch (e) {
-        moverColor = (parseInt(to[1]) > parseInt(from[1])) ? 'White' : 'Black';
-      }
+      const moverColor = lastAIMoveColor || 'White'; // ✅ TRUSTED VALUE
 
       // Try to get opening name from Lichess (non-blocking)
       let openingName = "Unknown opening";
@@ -283,13 +275,11 @@
       // Analyze with Stockfish to get real eval
       let finalCp = 0;
       let finalMate = null;
-      let bestMoveFrom = from, bestMoveTo = to;
 
       const handler = (event) => {
         const msg = event.data;
         if (typeof msg !== 'string') return;
 
-        // Capture evaluation
         if (msg.startsWith('info') && msg.includes('score')) {
           const cpMatch = msg.match(/score cp (-?\d+)/);
           const mateMatch = msg.match(/score mate (-?\d+)/);
@@ -297,16 +287,9 @@
           else if (mateMatch) finalMate = parseInt(mateMatch[1], 10);
         }
 
-        // Handle bestmove
         if (msg.startsWith('bestmove')) {
           stockfish.removeEventListener('message', handler);
-          const moveStr = msg.split(' ')[1];
-          if (moveStr && moveStr !== '(none)') {
-            bestMoveFrom = moveStr.slice(0, 2);
-            bestMoveTo = moveStr.slice(2, 4);
-          }
 
-          // Build evaluation text
           let evalText = "balanced";
           if (finalMate !== null) {
             evalText = finalMate > 0 ? "winning for White" : "winning for Black";
@@ -339,6 +322,10 @@
       fromSquare = null;
       file = 0;
       rank = 1;
+      
+      // ✅ Reset engine move tracking after undo
+      lastAIMove = null;
+      lastAIMoveColor = null;
       
       speak("Move undone");
       vibrate([100, 50]);
