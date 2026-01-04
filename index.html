@@ -241,8 +241,8 @@
       stockfish.postMessage('go movetime 1000');
     };
     
-    // ✅ UPDATED: speakAnalysis now says "White/Black move X to Y. Opening. Position is ..."
-    const speakAnalysis = async () => {
+    // ✅ FIXED: Use Stockfish eval + Lichess opening name
+    const speakAnalysis = () => {
       if (mode !== 'chess' || !stockfish) {
         speak("Engine not ready.");
         return;
@@ -255,7 +255,7 @@
 
       const { from, to } = lastAIMove;
 
-      // Determine if the last move was White or Black
+      // Determine mover color
       let moverColor = 'White';
       try {
         const history = game.history({ verbose: true });
@@ -271,31 +271,60 @@
         moverColor = (parseInt(to[1]) > parseInt(from[1])) ? 'White' : 'Black';
       }
 
-      // Fetch opening & evaluation from Lichess
+      // Try to get opening name from Lichess (non-blocking)
       let openingName = "Unknown opening";
-      let evalText = "balanced";
+      fetch(`https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(game.fen())}&multiPv=1`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data?.opening?.name) openingName = data.opening.name;
+        })
+        .catch(() => {});
 
-      try {
-        const response = await fetch(`https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(game.fen())}&multiPv=1`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data?.opening?.name) {
-            openingName = data.opening.name;
+      // Analyze with Stockfish to get real eval
+      let finalCp = 0;
+      let finalMate = null;
+      let bestMoveFrom = from, bestMoveTo = to;
+
+      const handler = (event) => {
+        const msg = event.data;
+        if (typeof msg !== 'string') return;
+
+        // Capture evaluation
+        if (msg.startsWith('info') && msg.includes('score')) {
+          const cpMatch = msg.match(/score cp (-?\d+)/);
+          const mateMatch = msg.match(/score mate (-?\d+)/);
+          if (cpMatch) finalCp = parseInt(cpMatch[1], 10);
+          else if (mateMatch) finalMate = parseInt(mateMatch[1], 10);
+        }
+
+        // Handle bestmove
+        if (msg.startsWith('bestmove')) {
+          stockfish.removeEventListener('message', handler);
+          const moveStr = msg.split(' ')[1];
+          if (moveStr && moveStr !== '(none)') {
+            bestMoveFrom = moveStr.slice(0, 2);
+            bestMoveTo = moveStr.slice(2, 4);
           }
-          const cp = data?.pvs?.[0]?.cp;
-          if (cp !== undefined) {
-            if (cp > 100) evalText = "winning for White";
-            else if (cp < -100) evalText = "winning for Black";
-            else if (cp > 30) evalText = "White advantage";
-            else if (cp < -30) evalText = "Black advantage";
+
+          // Build evaluation text
+          let evalText = "balanced";
+          if (finalMate !== null) {
+            evalText = finalMate > 0 ? "winning for White" : "winning for Black";
+          } else {
+            if (finalCp > 100) evalText = "winning for White";
+            else if (finalCp < -100) evalText = "winning for Black";
+            else if (finalCp > 30) evalText = "White advantage";
+            else if (finalCp < -30) evalText = "Black advantage";
             else evalText = "balanced";
           }
-        }
-      } catch (err) {
-        // Keep defaults on error
-      }
 
-      speakMove(`${moverColor} move ${from} to ${to}. ${openingName}. Position is ${evalText}.`);
+          speakMove(`${moverColor} move ${from} to ${to}. ${openingName}. Position is ${evalText}.`);
+        }
+      };
+
+      stockfish.addEventListener('message', handler);
+      stockfish.postMessage(`position fen ${game.fen()}`);
+      stockfish.postMessage('go depth 12');
     };
     
     const undoLastMove = () => {
