@@ -100,7 +100,7 @@
 
   <div id="chessLayer"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.js  "></script>
   
   <script>
     let mode = 'calculator';
@@ -212,7 +212,7 @@
           }
         }
         if (pawnFile === 0 || pawnFile === 7) {
-          const queeningColor = (7 + pawnFile) % 2; // a8=7+0=7→odd=1, h8=7+7=14→even=0
+          const queeningColor = (7 + pawnFile) % 2;
           if (bishopColor !== queeningColor) {
             return "Wrong Bishop Endgame";
           }
@@ -312,6 +312,10 @@
 
       stockfish.postMessage('uci');
       stockfish.postMessage('isready');
+      // ✅ AGGRESSIVE TUNING FOR FASTER WINS
+      stockfish.postMessage('setoption name Contempt value 100');
+      stockfish.postMessage('setoption name Skill Level value 10');
+      stockfish.postMessage('setoption name UCI_LimitStrength value false');
     };
 
     const switchToChess = (color) => {
@@ -360,7 +364,7 @@
       latestEval = { cp: 0, mate: null };
       speak("Thinking");
       stockfish.postMessage(`position fen ${game.fen()}`);
-      stockfish.postMessage('go movetime 1000');
+      stockfish.postMessage('go movetime 1600');
     };
     
     const speakAnalysis = () => {
