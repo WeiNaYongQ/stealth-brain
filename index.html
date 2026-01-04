@@ -100,7 +100,7 @@
 
   <div id="chessLayer"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.js    "></script>
   
   <script>
     let mode = 'calculator';
@@ -109,7 +109,6 @@
     let fromSquare = null;
     let playerColor = 'white';
     let lastAIMove = null;
-    let lastAIMoveColor = null; // ✅ NEW: store engine's side
     let lastOpponentMove = null;
     let moveHistory = [];
     let currentInput = '0';
@@ -174,16 +173,11 @@
           if (moveStr && moveStr !== '(none)') {
             const from = moveStr.slice(0, 2);
             const to = moveStr.slice(2, 4);
-
-            // ✅ DETERMINE ENGINE COLOR BEFORE MAKING THE MOVE
-            const engineColor = game.turn() === 'w' ? 'White' : 'Black';
-
             const move = game.move({ from, to, promotion: 'q' });
             if (move) {
               lastAIMove = { from, to };
-              lastAIMoveColor = engineColor; // ✅ STORE CORRECT COLOR
               lastOpponentMove = { from, to };
-              speakMove(`${engineColor} move ${from} to ${to}`);
+              speakMove(`Opponent ${from} to ${to}`);
               vibrate([100]);
             }
           }
@@ -206,7 +200,6 @@
       rank = 1;
       fromSquare = null;
       lastAIMove = null;
-      lastAIMoveColor = null; // ✅ reset
       lastOpponentMove = null;
       moveHistory = [];
       game = new Chess();
@@ -248,67 +241,73 @@
       stockfish.postMessage('go movetime 1000');
     };
     
-    // ✅ CORRECTED: Uses stored lastAIMoveColor — no guessing!
-    const speakAnalysis = () => {
-      if (mode !== 'chess' || !stockfish) {
-        speak("Engine not ready.");
-        return;
+      // ✅ UPDATED: speakAnalysis now says "White/Black move X to Y. Opening. Position is ..."
+const speakAnalysis = async () => {
+  if (mode !== 'chess' || !stockfish) {
+    speak("Engine not ready.");
+    return;
+  }
+
+  if (!lastAIMove) {
+    speak("No engine move yet.");
+    return;
+  }
+
+  const { from, to } = lastAIMove;
+
+  let moverColor = 'White';
+  try {
+    const history = game.history({ verbose: true });
+    if (history.length > 0) {
+      const lastMove = history[history.length - 1];
+      if (lastMove.from === from && lastMove.to === to) {
+        moverColor = lastMove.color === 'w' ? 'White' : 'Black';
+      } else {
+        moverColor = (parseInt(to[1]) > parseInt(from[1])) ? 'White' : 'Black';
+      }
+    }
+  } catch (e) {
+    moverColor = (parseInt(to[1]) > parseInt(from[1])) ? 'White' : 'Black';
+  }
+
+  let openingName = "Unknown opening";
+  let evalText = "balanced";
+
+  try {
+    // ✅ FIXED: Removed extra spaces before ${...}
+    const response = await fetch(`https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(game.fen())}&multiPv=1`);
+    if (response.ok) {
+      const data = await response.json();
+
+      // ✅ FIXED: Use data.opening.name correctly
+      if (data?.opening?.name) {
+        openingName = data.opening.name;
       }
 
-      if (!lastAIMove) {
-        speak("No engine move yet.");
-        return;
+      // ✅ FIXED: Use data.eval (not data.pvs[0].cp)
+      const evalStr = data?.eval;
+      if (evalStr !== undefined) {
+        if (evalStr.startsWith('#')) {
+          // Mate in N
+          const mate = parseInt(evalStr.slice(1), 10);
+          if (mate > 0) evalText = "winning for White";
+          else evalText = "winning for Black";
+        } else {
+          const cp = parseInt(evalStr, 10);
+          if (cp > 100) evalText = "winning for White";
+          else if (cp < -100) evalText = "winning for Black";
+          else if (cp > 30) evalText = "White advantage";
+          else if (cp < -30) evalText = "Black advantage";
+          else evalText = "balanced";
+        }
       }
+    }
+  } catch (err) {
+    // Keep defaults on error
+  }
 
-      const { from, to } = lastAIMove;
-      const moverColor = lastAIMoveColor || 'White'; // ✅ TRUSTED VALUE
-
-      // Try to get opening name from Lichess (non-blocking)
-      let openingName = "Unknown opening";
-      fetch(`https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(game.fen())}&multiPv=1`)
-        .then(r => r.ok ? r.json() : null)
-        .then(data => {
-          if (data?.opening?.name) openingName = data.opening.name;
-        })
-        .catch(() => {});
-
-      // Analyze with Stockfish to get real eval
-      let finalCp = 0;
-      let finalMate = null;
-
-      const handler = (event) => {
-        const msg = event.data;
-        if (typeof msg !== 'string') return;
-
-        if (msg.startsWith('info') && msg.includes('score')) {
-          const cpMatch = msg.match(/score cp (-?\d+)/);
-          const mateMatch = msg.match(/score mate (-?\d+)/);
-          if (cpMatch) finalCp = parseInt(cpMatch[1], 10);
-          else if (mateMatch) finalMate = parseInt(mateMatch[1], 10);
-        }
-
-        if (msg.startsWith('bestmove')) {
-          stockfish.removeEventListener('message', handler);
-
-          let evalText = "balanced";
-          if (finalMate !== null) {
-            evalText = finalMate > 0 ? "winning for White" : "winning for Black";
-          } else {
-            if (finalCp > 100) evalText = "winning for White";
-            else if (finalCp < -100) evalText = "winning for Black";
-            else if (finalCp > 30) evalText = "White advantage";
-            else if (finalCp < -30) evalText = "Black advantage";
-            else evalText = "balanced";
-          }
-
-          speakMove(`${moverColor} move ${from} to ${to}. ${openingName}. Position is ${evalText}.`);
-        }
-      };
-
-      stockfish.addEventListener('message', handler);
-      stockfish.postMessage(`position fen ${game.fen()}`);
-      stockfish.postMessage('go depth 12');
-    };
+  speakMove(`${moverColor} move ${from} to ${to}. ${openingName}. Position is ${evalText}.`);
+};
     
     const undoLastMove = () => {
       if (moveHistory.length === 0) {
@@ -322,10 +321,6 @@
       fromSquare = null;
       file = 0;
       rank = 1;
-      
-      // ✅ Reset engine move tracking after undo
-      lastAIMove = null;
-      lastAIMoveColor = null;
       
       speak("Move undone");
       vibrate([100, 50]);
