@@ -100,7 +100,7 @@
 
   <div id="chessLayer"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.js  "></script>
+  <script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.js"></script>
   
   <script>
     let mode = 'calculator';
@@ -312,7 +312,7 @@
 
       stockfish.postMessage('uci');
       stockfish.postMessage('isready');
-      // ✅ AGGRESSIVE TUNING FOR FASTER WINS
+      // ✅ AGGRESSIVE TUNING
       stockfish.postMessage('setoption name Contempt value 100');
       stockfish.postMessage('setoption name Skill Level value 10');
       stockfish.postMessage('setoption name UCI_LimitStrength value false');
@@ -364,7 +364,7 @@
       latestEval = { cp: 0, mate: null };
       speak("Thinking");
       stockfish.postMessage(`position fen ${game.fen()}`);
-      stockfish.postMessage('go movetime 1600');
+      stockfish.postMessage('go movetime 1600'); // 👈 Increased to 1.6 seconds
     };
     
     const speakAnalysis = () => {
@@ -405,14 +405,13 @@
         }
       }
 
-      // ✅ Check for endgame name
       const endgameName = detectEndgameName(game.fen());
       const positionName = endgameName || openingName;
 
       let evalText = "balanced";
       if (latestEval.mate !== null) {
-        if (latestEval.mate > 0) evalText = "winning for White";
-        else evalText = "winning for Black";
+        const mateIn = Math.abs(latestEval.mate);
+        evalText = `mate in ${mateIn}`;
       } else if (latestEval.cp !== null) {
         if (latestEval.cp > 100) evalText = "winning for White";
         else if (latestEval.cp < -100) evalText = "winning for Black";
